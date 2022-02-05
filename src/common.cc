@@ -941,7 +941,7 @@ namespace sharp {
     }
 
     // We should not reduce or enlarge the output image, if
-    // withoutReduction or withoutEnlargement  is specified.
+    // withoutReduction or withoutEnlargement is specified.
     if (withoutReduction) {
       // Equivalent of VIPS_SIZE_UP
       hshrink = std::min(1.0, hshrink);
