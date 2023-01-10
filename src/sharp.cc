@@ -26,12 +26,18 @@ static void* sharp_vips_init(void*) {
   return nullptr;
 }
 
+static void sharp_vips_shutdown(void*) {
+  vips_shutdown();
+}
+
 Napi::Object init(Napi::Env env, Napi::Object exports) {
   static GOnce sharp_vips_init_once = G_ONCE_INIT;
-  g_once(&sharp_vips_init_once, static_cast<GThreadFunc>(sharp_vips_init), nullptr);
+  g_once(&sharp_vips_init_once, sharp_vips_init, nullptr);
 
   g_log_set_handler("VIPS", static_cast<GLogLevelFlags>(G_LOG_LEVEL_WARNING),
     static_cast<GLogFunc>(sharp::VipsWarningCallback), nullptr);
+
+  napi_add_env_cleanup_hook(env, sharp_vips_shutdown, nullptr);
 
   // Methods available to JavaScript
   exports.Set("metadata", Napi::Function::New(env, metadata));
