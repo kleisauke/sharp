@@ -763,7 +763,7 @@ describe('Image metadata', function () {
       })
   );
 
-  (sharp.format.heif.input.file ? it : it.skip)('AVIF', async () => {
+  it('AVIF', async () => {
     const metadata = await sharp(fixtures.inputAvif).metadata();
     assert.deepStrictEqual(metadata, {
       format: 'heif',

@@ -7,7 +7,7 @@ const assert = require('assert');
 
 const sharp = require('../../');
 
-(sharp.format.heif.input.file ? describe : describe.skip)('HEIF', () => {
+describe('HEIF', () => {
   it('called without options does not throw an error', () => {
     assert.doesNotThrow(() => {
       sharp().heif();

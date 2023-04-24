@@ -8,7 +8,7 @@ const assert = require('assert');
 const sharp = require('../../');
 const { inputAvif, inputJpg, inputGifAnimated } = require('../fixtures');
 
-(sharp.format.heif.input.file ? describe : describe.skip)('AVIF', () => {
+describe('AVIF', () => {
   it('called without options does not throw an error', () => {
     assert.doesNotThrow(() => {
       sharp().avif();
