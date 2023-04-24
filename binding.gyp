@@ -111,11 +111,6 @@
         # .js because that's how Emscripten knows what to build, and .node
         # in front so that `require('[...].node')` would just work.
         'product_extension': 'node.js',
-        'defines': [
-          # Limit to 1 async task to avoid stealing threads from the pool
-          # that are intended for libvips.
-          'EMNAPI_WORKER_POOL_SIZE=1',
-        ],
         'cflags': ['-g2'],
         'ldflags': [
           '-g2',

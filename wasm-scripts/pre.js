@@ -1,14 +1,18 @@
 /* global Module, ENV, _vips_shutdown, _uv_library_shutdown */
 
 let vipsConcurrency;
+let uvThreadpoolSize;
 if ('webcontainer' in process.versions) {
   vipsConcurrency = 2;
+  uvThreadpoolSize = 1;
 } else {
   vipsConcurrency = +process.env.VIPS_CONCURRENCY || require('os').cpus().length;
+  uvThreadpoolSize = +process.env.UV_THREADPOOL_SIZE || 4;
 }
 
 Module.preRun = () => {
   ENV.VIPS_CONCURRENCY = vipsConcurrency;
+  ENV.UV_THREADPOOL_SIZE = uvThreadpoolSize;
 };
 
 Module.onRuntimeInitialized = () => {

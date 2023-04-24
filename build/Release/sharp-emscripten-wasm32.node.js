@@ -53,14 +53,19 @@ var Module = typeof Module != "undefined" ? Module : {};
 
 let vipsConcurrency;
 
+let uvThreadpoolSize;
+
 if ("webcontainer" in process.versions) {
  vipsConcurrency = 2;
+ uvThreadpoolSize = 1;
 } else {
  vipsConcurrency = +process.env.VIPS_CONCURRENCY || require("os").cpus().length;
+ uvThreadpoolSize = +process.env.UV_THREADPOOL_SIZE || 4;
 }
 
 Module.preRun = () => {
  ENV.VIPS_CONCURRENCY = vipsConcurrency;
+ ENV.UV_THREADPOOL_SIZE = uvThreadpoolSize;
 };
 
 Module.onRuntimeInitialized = () => {
@@ -4588,6 +4593,10 @@ function emnapiInit(options) {
  return emnapiModule.exports;
 }
 
+function __emnapi_async_work_pool_size() {
+ return Math.abs(emnapiAsyncWorkPoolSize);
+}
+
 function __emnapi_callback_into_module(forceUncaught, env, callback, data, close_scope_if_throw) {
  var envObject = emnapiCtx.envStore.get(env);
  var scope = emnapiCtx.openScope(envObject);
@@ -7549,6 +7558,7 @@ var wasmImports = {
  __syscall_rmdir: ___syscall_rmdir,
  __syscall_stat64: ___syscall_stat64,
  __syscall_unlinkat: ___syscall_unlinkat,
+ _emnapi_async_work_pool_size: __emnapi_async_work_pool_size,
  _emnapi_callback_into_module: __emnapi_callback_into_module,
  _emnapi_ctx_decrease_waiting_request_counter: __emnapi_ctx_decrease_waiting_request_counter,
  _emnapi_ctx_increase_waiting_request_counter: __emnapi_ctx_increase_waiting_request_counter,
