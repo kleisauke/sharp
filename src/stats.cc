@@ -106,7 +106,7 @@ class StatsWorker : public Napi::AsyncWorker {
     // Handle warnings
     std::string warning = sharp::VipsWarningPop();
     while (!warning.empty()) {
-      debuglog.MakeCallback(Receiver().Value(), { Napi::String::New(env, warning) });
+      debuglog.Call(Receiver().Value(), { Napi::String::New(env, warning) });
       warning = sharp::VipsWarningPop();
     }
 
