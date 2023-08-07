@@ -5,7 +5,7 @@ cd "${0%/*}"
 
 [ -f wasm-vips/build/target/lib/pkgconfig/vips-cpp.pc ] || (
   mkdir -p wasm-vips
-  curl -Ls https://github.com/kleisauke/wasm-vips/archive/1004691855974b1114d56e53c99fe87650576865.tar.gz | tar xzC wasm-vips --strip-components=1
+  curl -Ls https://github.com/kleisauke/wasm-vips/archive/41594f2b3d10dc78770a3c2742bab6e26bf16af0.tar.gz | tar xzC wasm-vips --strip-components=1
   cd wasm-vips
   npm run build -- --enable-lto --disable-modules --disable-jxl --disable-svg --disable-bindings --enable-libvips-cpp
 )
@@ -15,12 +15,12 @@ docker run \
   -v "$PWD/wasm-vips:/src" \
   -v "$PWD/..:/sharp-src" \
   -w '/sharp-src' \
+  --entrypoint emmake \
   wasm-vips \
-    emmake \
-      /bin/sh -c ' \
-        PKG_CONFIG_LIBDIR=/src/build/target/lib/pkgconfig:$PKG_CONFIG_LIBDIR \
-        npm install \
-          --build-from-source \
-          --arch=wasm32 \
-          --nodedir=wasm-scripts \
-      '
+    /bin/sh -c ' \
+      PKG_CONFIG_LIBDIR=/src/build/target/lib/pkgconfig:$PKG_CONFIG_LIBDIR \
+      npm install \
+        --build-from-source \
+        --arch=wasm32 \
+        --nodedir=wasm-scripts \
+    '

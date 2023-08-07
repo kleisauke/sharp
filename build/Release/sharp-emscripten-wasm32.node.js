@@ -168,14 +168,14 @@ if (ENVIRONMENT_IS_NODE) {
  }
  if (!ENVIRONMENT_IS_NODE) {
   read_ = url => {
-   var xhr = new XMLHttpRequest();
+   var xhr = new XMLHttpRequest;
    xhr.open("GET", url, false);
    xhr.send(null);
    return xhr.responseText;
   };
   if (ENVIRONMENT_IS_WORKER) {
    readBinary = url => {
-    var xhr = new XMLHttpRequest();
+    var xhr = new XMLHttpRequest;
     xhr.open("GET", url, false);
     xhr.responseType = "arraybuffer";
     xhr.send(null);
@@ -183,7 +183,7 @@ if (ENVIRONMENT_IS_NODE) {
    };
   }
   readAsync = (url, onload, onerror) => {
-   var xhr = new XMLHttpRequest();
+   var xhr = new XMLHttpRequest;
    xhr.open("GET", url, true);
    xhr.responseType = "arraybuffer";
    xhr.onload = () => {
@@ -240,6 +240,8 @@ if (typeof WebAssembly != "object") {
 }
 
 var wasmMemory;
+
+var wasmExports;
 
 var wasmModule;
 
@@ -426,18 +428,14 @@ if (!isDataURI(wasmBinaryFile)) {
  wasmBinaryFile = locateFile(wasmBinaryFile);
 }
 
-function getBinary(file) {
- try {
-  if (file == wasmBinaryFile && wasmBinary) {
-   return new Uint8Array(wasmBinary);
-  }
-  if (readBinary) {
-   return readBinary(file);
-  }
-  throw "sync fetching of the wasm failed: you can preload it to Module['wasmBinary'] manually, or emcc.py will do that for you when generating HTML (but not JS)";
- } catch (err) {
-  abort(err);
+function getBinarySync(file) {
+ if (file == wasmBinaryFile && wasmBinary) {
+  return new Uint8Array(wasmBinary);
  }
+ if (readBinary) {
+  return readBinary(file);
+ }
+ throw "sync fetching of the wasm failed: you can preload it to Module['wasmBinary'] manually, or emcc.py will do that for you when generating HTML (but not JS)";
 }
 
 function getBinaryPromise(binaryFile) {
@@ -450,28 +448,17 @@ function getBinaryPromise(binaryFile) {
      throw "failed to load wasm binary file at '" + binaryFile + "'";
     }
     return response["arrayBuffer"]();
-   }).catch(() => getBinary(binaryFile));
+   }).catch(() => getBinarySync(binaryFile));
   }
  }
- return Promise.resolve().then(() => getBinary(binaryFile));
+ return Promise.resolve().then(() => getBinarySync(binaryFile));
 }
 
 function instantiateSync(file, info) {
- var instance;
  var module;
- var binary;
- try {
-  binary = getBinary(file);
-  module = new WebAssembly.Module(binary);
-  instance = new WebAssembly.Instance(module, info);
- } catch (e) {
-  var str = e.toString();
-  err("failed to compile wasm module: " + str);
-  if (str.includes("imported Memory") || str.includes("memory import")) {
-   err("Memory size incompatibility issues may be due to changing INITIAL_MEMORY at runtime to something too large. Use ALLOW_MEMORY_GROWTH to allow any size memory (and also make sure not to set INITIAL_MEMORY at runtime to something smaller than it was at compile time).");
-  }
-  throw e;
- }
+ var binary = getBinarySync(file);
+ module = new WebAssembly.Module(binary);
+ var instance = new WebAssembly.Instance(module, info);
  return [ instance, module ];
 }
 
@@ -482,10 +469,10 @@ function createWasm() {
  };
  function receiveInstance(instance, module) {
   var exports = instance.exports;
-  Module["asm"] = exports;
-  registerTLSInit(Module["asm"]["_emscripten_tls_init"]);
-  wasmTable = Module["asm"]["__indirect_function_table"];
-  addOnInit(Module["asm"]["__wasm_call_ctors"]);
+  wasmExports = exports;
+  registerTLSInit(wasmExports["_emscripten_tls_init"]);
+  wasmTable = wasmExports["__indirect_function_table"];
+  addOnInit(wasmExports["__wasm_call_ctors"]);
   wasmModule = module;
   removeRunDependency("wasm-instantiate");
   return exports;
@@ -521,7 +508,7 @@ function unbox_small_structs(type_ptr) {
  return [ type_ptr, type_id ];
 }
 
-function ffi_call_helper(cif, fn, rvalue, avalue) {
+function ffi_call_js(cif, fn, rvalue, avalue) {
  var abi = GROWABLE_HEAP_U32()[(cif >> 2) + 0];
  var nargs = GROWABLE_HEAP_U32()[(cif >> 2) + 1];
  var nfixedargs = GROWABLE_HEAP_U32()[(cif >> 2) + 6];
@@ -646,8 +633,8 @@ function ffi_call_helper(cif, fn, rvalue, avalue) {
     cur_stack_ptr -= 16, cur_stack_ptr &= ~(8 - 1);
     GROWABLE_HEAP_U32()[(cur_stack_ptr >> 2) + 0] = GROWABLE_HEAP_U32()[(arg_ptr >> 2) + 0];
     GROWABLE_HEAP_U32()[(cur_stack_ptr >> 2) + 1] = GROWABLE_HEAP_U32()[(arg_ptr >> 2) + 1];
-    GROWABLE_HEAP_U32()[(cur_stack_ptr >> 2) + 2] = GROWABLE_HEAP_U32()[(arg_ptr >> 2) + 1];
-    GROWABLE_HEAP_U32()[(cur_stack_ptr >> 2) + 3] = GROWABLE_HEAP_U32()[(arg_ptr >> 2) + 1];
+    GROWABLE_HEAP_U32()[(cur_stack_ptr >> 2) + 2] = GROWABLE_HEAP_U32()[(arg_ptr >> 2) + 2];
+    GROWABLE_HEAP_U32()[(cur_stack_ptr >> 2) + 3] = GROWABLE_HEAP_U32()[(arg_ptr >> 2) + 3];
     break;
 
    case 13:
@@ -674,9 +661,9 @@ function ffi_call_helper(cif, fn, rvalue, avalue) {
    GROWABLE_HEAP_U32()[(arg_target >> 2) + 0] = cur_stack_ptr;
   }
  }
- cur_stack_ptr -= 0, cur_stack_ptr &= ~(8 - 1);
  stackRestore(cur_stack_ptr);
- var result = wasmTable.get(fn).apply(null, args);
+ stackAlloc(0);
+ var result = getWasmTableEntry(fn).apply(null, args);
  stackRestore(orig_stack_ptr);
  if (ret_by_arg) {
   return;
@@ -723,7 +710,7 @@ function ffi_call_helper(cif, fn, rvalue, avalue) {
  }
 }
 
-function ffi_closure_alloc_helper(size, code) {
+function ffi_closure_alloc_js(size, code) {
  var closure = _malloc(size);
  var index = getEmptyTableSlot();
  GROWABLE_HEAP_U32()[(code >> 2) + 0] = index;
@@ -731,13 +718,13 @@ function ffi_closure_alloc_helper(size, code) {
  return closure;
 }
 
-function ffi_closure_free_helper(closure) {
+function ffi_closure_free_js(closure) {
  var index = GROWABLE_HEAP_U32()[(closure >> 2) + 0];
  freeTableIndexes.push(index);
  _free(closure);
 }
 
-function ffi_prep_closure_loc_helper(closure, cif, fun, user_data, codeloc) {
+function ffi_prep_closure_loc_js(closure, cif, fun, user_data, codeloc) {
  var abi = GROWABLE_HEAP_U32()[(cif >> 2) + 0];
  var nargs = GROWABLE_HEAP_U32()[(cif >> 2) + 1];
  var nfixedargs = GROWABLE_HEAP_U32()[(cif >> 2) + 6];
@@ -934,9 +921,9 @@ function ffi_prep_closure_loc_helper(closure, cif, fun, user_data, codeloc) {
    }
    varargs += 4;
   }
-  cur_ptr -= 0, cur_ptr &= ~(8 - 1);
   stackRestore(cur_ptr);
-  wasmTable.get(GROWABLE_HEAP_U32()[(closure >> 2) + 2])(GROWABLE_HEAP_U32()[(closure >> 2) + 1], ret_ptr, args_ptr, GROWABLE_HEAP_U32()[(closure >> 2) + 3]);
+  stackAlloc(0);
+  getWasmTableEntry(GROWABLE_HEAP_U32()[(closure >> 2) + 2])(GROWABLE_HEAP_U32()[(closure >> 2) + 1], ret_ptr, args_ptr, GROWABLE_HEAP_U32()[(closure >> 2) + 3]);
   stackRestore(orig_stack_ptr);
   if (!ret_by_arg) {
    switch (sig[0]) {
@@ -959,7 +946,7 @@ function ffi_prep_closure_loc_helper(closure, cif, fun, user_data, codeloc) {
  } catch (e) {
   return 1;
  }
- wasmTable.set(codeloc, wasm_trampoline);
+ setWasmTableEntry(codeloc, wasm_trampoline);
  GROWABLE_HEAP_U32()[(closure >> 2) + 1] = cif;
  GROWABLE_HEAP_U32()[(closure >> 2) + 2] = fun;
  GROWABLE_HEAP_U32()[(closure >> 2) + 3] = user_data;
@@ -972,10 +959,10 @@ function ExitStatus(status) {
  this.status = status;
 }
 
-function terminateWorker(worker) {
+var terminateWorker = function(worker) {
  worker.terminate();
  worker.onmessage = e => {};
-}
+};
 
 function killThread(pthread_ptr) {
  var worker = PThread.pthreads[pthread_ptr];
@@ -999,10 +986,10 @@ function cleanupThread(pthread_ptr) {
  PThread.returnWorkerToPool(worker);
 }
 
-function zeroMemory(address, size) {
+var zeroMemory = (address, size) => {
  GROWABLE_HEAP_U8().fill(0, address, address + size);
  return address;
-}
+};
 
 function spawnThread(threadParams) {
  var worker = PThread.getNewWorker();
@@ -1036,7 +1023,7 @@ var PATH = {
  join2: (l, r) => nodePath["posix"]["join"](l, r)
 };
 
-function initRandomFill() {
+var initRandomFill = () => {
  if (typeof crypto == "object" && typeof crypto["getRandomValues"] == "function") {
   return view => (view.set(crypto.getRandomValues(new Uint8Array(view.byteLength))), 
   view);
@@ -1052,11 +1039,9 @@ function initRandomFill() {
   } catch (e) {}
  }
  abort("initRandomDevice");
-}
+};
 
-function randomFill(view) {
- return (randomFill = initRandomFill())(view);
-}
+var randomFill = view => (randomFill = initRandomFill())(view);
 
 var PATH_FS = {
  resolve: function() {
@@ -1067,7 +1052,40 @@ var PATH_FS = {
  relative: (from, to) => nodePath["posix"]["relative"](from || FS.cwd(), to || FS.cwd())
 };
 
-function lengthBytesUTF8(str) {
+var UTF8ArrayToString = (heapOrArray, idx, maxBytesToRead) => {
+ var endIdx = idx + maxBytesToRead;
+ var str = "";
+ while (!(idx >= endIdx)) {
+  var u0 = heapOrArray[idx++];
+  if (!u0) return str;
+  if (!(u0 & 128)) {
+   str += String.fromCharCode(u0);
+   continue;
+  }
+  var u1 = heapOrArray[idx++] & 63;
+  if ((u0 & 224) == 192) {
+   str += String.fromCharCode((u0 & 31) << 6 | u1);
+   continue;
+  }
+  var u2 = heapOrArray[idx++] & 63;
+  if ((u0 & 240) == 224) {
+   u0 = (u0 & 15) << 12 | u1 << 6 | u2;
+  } else {
+   u0 = (u0 & 7) << 18 | u1 << 12 | u2 << 6 | heapOrArray[idx++] & 63;
+  }
+  if (u0 < 65536) {
+   str += String.fromCharCode(u0);
+  } else {
+   var ch = u0 - 65536;
+   str += String.fromCharCode(55296 | ch >> 10, 56320 | ch & 1023);
+  }
+ }
+ return str;
+};
+
+var FS_stdin_getChar_buffer = [];
+
+var lengthBytesUTF8 = str => {
  var len = 0;
  for (var i = 0; i < str.length; ++i) {
   var c = str.charCodeAt(i);
@@ -1083,9 +1101,9 @@ function lengthBytesUTF8(str) {
   }
  }
  return len;
-}
+};
 
-function stringToUTF8Array(str, heap, outIdx, maxBytesToWrite) {
+var stringToUTF8Array = (str, heap, outIdx, maxBytesToWrite) => {
  if (!(maxBytesToWrite > 0)) return 0;
  var startIdx = outIdx;
  var endIdx = outIdx + maxBytesToWrite - 1;
@@ -1117,7 +1135,7 @@ function stringToUTF8Array(str, heap, outIdx, maxBytesToWrite) {
  }
  heap[outIdx] = 0;
  return outIdx - startIdx;
-}
+};
 
 function intArrayFromString(stringy, dontAddNull, length) {
  var len = length > 0 ? length : lengthBytesUTF8(stringy) + 1;
@@ -1127,36 +1145,42 @@ function intArrayFromString(stringy, dontAddNull, length) {
  return u8array;
 }
 
-function UTF8ArrayToString(heapOrArray, idx, maxBytesToRead) {
- var endIdx = idx + maxBytesToRead;
- var str = "";
- while (!(idx >= endIdx)) {
-  var u0 = heapOrArray[idx++];
-  if (!u0) return str;
-  if (!(u0 & 128)) {
-   str += String.fromCharCode(u0);
-   continue;
+var FS_stdin_getChar = () => {
+ if (!FS_stdin_getChar_buffer.length) {
+  var result = null;
+  if (ENVIRONMENT_IS_NODE) {
+   var BUFSIZE = 256;
+   var buf = Buffer.alloc(BUFSIZE);
+   var bytesRead = 0;
+   var fd = process.stdin.fd;
+   try {
+    bytesRead = fs.readSync(fd, buf, 0, BUFSIZE, -1);
+   } catch (e) {
+    if (e.toString().includes("EOF")) bytesRead = 0; else throw e;
+   }
+   if (bytesRead > 0) {
+    result = buf.slice(0, bytesRead).toString("utf-8");
+   } else {
+    result = null;
+   }
+  } else if (typeof window != "undefined" && typeof window.prompt == "function") {
+   result = window.prompt("Input: ");
+   if (result !== null) {
+    result += "\n";
+   }
+  } else if (typeof readline == "function") {
+   result = readline();
+   if (result !== null) {
+    result += "\n";
+   }
   }
-  var u1 = heapOrArray[idx++] & 63;
-  if ((u0 & 224) == 192) {
-   str += String.fromCharCode((u0 & 31) << 6 | u1);
-   continue;
+  if (!result) {
+   return null;
   }
-  var u2 = heapOrArray[idx++] & 63;
-  if ((u0 & 240) == 224) {
-   u0 = (u0 & 15) << 12 | u1 << 6 | u2;
-  } else {
-   u0 = (u0 & 7) << 18 | u1 << 12 | u2 << 6 | heapOrArray[idx++] & 63;
-  }
-  if (u0 < 65536) {
-   str += String.fromCharCode(u0);
-  } else {
-   var ch = u0 - 65536;
-   str += String.fromCharCode(55296 | ch >> 10, 56320 | ch & 1023);
-  }
+  FS_stdin_getChar_buffer = intArrayFromString(result, true);
  }
- return str;
-}
+ return FS_stdin_getChar_buffer.shift();
+};
 
 var TTY = {
  ttys: [],
@@ -1228,39 +1252,7 @@ var TTY = {
  },
  default_tty_ops: {
   get_char: function(tty) {
-   if (!tty.input.length) {
-    var result = null;
-    if (ENVIRONMENT_IS_NODE) {
-     var BUFSIZE = 256;
-     var buf = Buffer.alloc(BUFSIZE);
-     var bytesRead = 0;
-     try {
-      bytesRead = fs.readSync(process.stdin.fd, buf, 0, BUFSIZE, -1);
-     } catch (e) {
-      if (e.toString().includes("EOF")) bytesRead = 0; else throw e;
-     }
-     if (bytesRead > 0) {
-      result = buf.slice(0, bytesRead).toString("utf-8");
-     } else {
-      result = null;
-     }
-    } else if (typeof window != "undefined" && typeof window.prompt == "function") {
-     result = window.prompt("Input: ");
-     if (result !== null) {
-      result += "\n";
-     }
-    } else if (typeof readline == "function") {
-     result = readline();
-     if (result !== null) {
-      result += "\n";
-     }
-    }
-    if (!result) {
-     return null;
-    }
-    tty.input = intArrayFromString(result, true);
-   }
-   return tty.input.shift();
+   return FS_stdin_getChar();
   },
   put_char: function(tty, val) {
    if (val === null || val === 10) {
@@ -1275,6 +1267,21 @@ var TTY = {
     out(UTF8ArrayToString(tty.output, 0));
     tty.output = [];
    }
+  },
+  ioctl_tcgets: function(tty) {
+   return {
+    c_iflag: 25856,
+    c_oflag: 5,
+    c_cflag: 191,
+    c_lflag: 35387,
+    c_cc: [ 3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
+   };
+  },
+  ioctl_tcsets: function(tty, optional_actions, data) {
+   return 0;
+  },
+  ioctl_tiocgwinsz: function(tty) {
+   return [ 24, 80 ];
   }
  },
  default_tty1_ops: {
@@ -1295,23 +1302,21 @@ var TTY = {
  }
 };
 
-function alignMemory(size, alignment) {
- return Math.ceil(size / alignment) * alignment;
-}
+var alignMemory = (size, alignment) => Math.ceil(size / alignment) * alignment;
 
-function mmapAlloc(size) {
+var mmapAlloc = size => {
  size = alignMemory(size, 65536);
  var ptr = _emscripten_builtin_memalign(65536, size);
  if (!ptr) return 0;
  return zeroMemory(ptr, size);
-}
+};
 
 var MEMFS = {
  ops_table: null,
- mount: function(mount) {
+ mount(mount) {
   return MEMFS.createNode(null, "/", 16384 | 511, 0);
  },
- createNode: function(parent, name, mode, dev) {
+ createNode(parent, name, mode, dev) {
   if (FS.isBlkdev(mode) || FS.isFIFO(mode)) {
    throw new FS.ErrnoError(63);
   }
@@ -1388,12 +1393,12 @@ var MEMFS = {
   }
   return node;
  },
- getFileDataAsTypedArray: function(node) {
+ getFileDataAsTypedArray(node) {
   if (!node.contents) return new Uint8Array(0);
   if (node.contents.subarray) return node.contents.subarray(0, node.usedBytes);
   return new Uint8Array(node.contents);
  },
- expandFileStorage: function(node, newCapacity) {
+ expandFileStorage(node, newCapacity) {
   var prevCapacity = node.contents ? node.contents.length : 0;
   if (prevCapacity >= newCapacity) return;
   var CAPACITY_DOUBLING_MAX = 1024 * 1024;
@@ -1403,7 +1408,7 @@ var MEMFS = {
   node.contents = new Uint8Array(newCapacity);
   if (node.usedBytes > 0) node.contents.set(oldContents.subarray(0, node.usedBytes), 0);
  },
- resizeFileStorage: function(node, newSize) {
+ resizeFileStorage(node, newSize) {
   if (node.usedBytes == newSize) return;
   if (newSize == 0) {
    node.contents = null;
@@ -1418,7 +1423,7 @@ var MEMFS = {
   }
  },
  node_ops: {
-  getattr: function(node) {
+  getattr(node) {
    var attr = {};
    attr.dev = FS.isChrdev(node.mode) ? node.id : 1;
    attr.ino = node.id;
@@ -1443,7 +1448,7 @@ var MEMFS = {
    attr.blocks = Math.ceil(attr.size / attr.blksize);
    return attr;
   },
-  setattr: function(node, attr) {
+  setattr(node, attr) {
    if (attr.mode !== undefined) {
     node.mode = attr.mode;
    }
@@ -1454,13 +1459,13 @@ var MEMFS = {
     MEMFS.resizeFileStorage(node, attr.size);
    }
   },
-  lookup: function(parent, name) {
+  lookup(parent, name) {
    throw FS.genericErrors[44];
   },
-  mknod: function(parent, name, mode, dev) {
+  mknod(parent, name, mode, dev) {
    return MEMFS.createNode(parent, name, mode, dev);
   },
-  rename: function(old_node, new_dir, new_name) {
+  rename(old_node, new_dir, new_name) {
    if (FS.isDir(old_node.mode)) {
     var new_node;
     try {
@@ -1479,11 +1484,11 @@ var MEMFS = {
    new_dir.timestamp = old_node.parent.timestamp;
    old_node.parent = new_dir;
   },
-  unlink: function(parent, name) {
+  unlink(parent, name) {
    delete parent.contents[name];
    parent.timestamp = Date.now();
   },
-  rmdir: function(parent, name) {
+  rmdir(parent, name) {
    var node = FS.lookupNode(parent, name);
    for (var i in node.contents) {
     throw new FS.ErrnoError(55);
@@ -1491,7 +1496,7 @@ var MEMFS = {
    delete parent.contents[name];
    parent.timestamp = Date.now();
   },
-  readdir: function(node) {
+  readdir(node) {
    var entries = [ ".", ".." ];
    for (var key in node.contents) {
     if (!node.contents.hasOwnProperty(key)) {
@@ -1501,12 +1506,12 @@ var MEMFS = {
    }
    return entries;
   },
-  symlink: function(parent, newname, oldpath) {
+  symlink(parent, newname, oldpath) {
    var node = MEMFS.createNode(parent, newname, 511 | 40960, 0);
    node.link = oldpath;
    return node;
   },
-  readlink: function(node) {
+  readlink(node) {
    if (!FS.isLink(node.mode)) {
     throw new FS.ErrnoError(28);
    }
@@ -1514,7 +1519,7 @@ var MEMFS = {
   }
  },
  stream_ops: {
-  read: function(stream, buffer, offset, length, position) {
+  read(stream, buffer, offset, length, position) {
    var contents = stream.node.contents;
    if (position >= stream.node.usedBytes) return 0;
    var size = Math.min(stream.node.usedBytes - position, length);
@@ -1525,7 +1530,7 @@ var MEMFS = {
    }
    return size;
   },
-  write: function(stream, buffer, offset, length, position, canOwn) {
+  write(stream, buffer, offset, length, position, canOwn) {
    if (buffer.buffer === GROWABLE_HEAP_I8().buffer) {
     canOwn = false;
    }
@@ -1557,7 +1562,7 @@ var MEMFS = {
    node.usedBytes = Math.max(node.usedBytes, position + length);
    return length;
   },
-  llseek: function(stream, offset, whence) {
+  llseek(stream, offset, whence) {
    var position = offset;
    if (whence === 1) {
     position += stream.position;
@@ -1571,11 +1576,11 @@ var MEMFS = {
    }
    return position;
   },
-  allocate: function(stream, offset, length) {
+  allocate(stream, offset, length) {
    MEMFS.expandFileStorage(stream.node, offset + length);
    stream.node.usedBytes = Math.max(stream.node.usedBytes, offset + length);
   },
-  mmap: function(stream, length, position, prot, flags) {
+  mmap(stream, length, position, prot, flags) {
    if (!FS.isFile(stream.node.mode)) {
     throw new FS.ErrnoError(43);
    }
@@ -1605,14 +1610,14 @@ var MEMFS = {
     allocated: allocated
    };
   },
-  msync: function(stream, buffer, offset, length, mmapFlags) {
+  msync(stream, buffer, offset, length, mmapFlags) {
    MEMFS.stream_ops.write(stream, buffer, 0, length, offset, false);
    return 0;
   }
  }
 };
 
-function asyncLoad(url, onload, onerror, noRunDep) {
+var asyncLoad = (url, onload, onerror, noRunDep) => {
  var dep = !noRunDep ? getUniqueRunDependency(`al ${url}`) : "";
  readAsync(url, arrayBuffer => {
   assert(arrayBuffer, `Loading data file "${url}" failed (no arrayBuffer).`);
@@ -1626,7 +1631,7 @@ function asyncLoad(url, onload, onerror, noRunDep) {
   }
  });
  if (dep) addRunDependency(dep);
-}
+};
 
 var preloadPlugins = Module["preloadPlugins"] || [];
 
@@ -1721,9 +1726,7 @@ var NODEFS = {
   var code = e.code;
   return ERRNO_CODES[code];
  },
- mount: mount => {
-  return NODEFS.createNode(null, "/", NODEFS.getMode(mount.opts.root), 0);
- },
+ mount: mount => NODEFS.createNode(null, "/", NODEFS.getMode(mount.opts.root), 0),
  createNode: (parent, name, mode, dev) => {
   if (!FS.isDir(mode) && !FS.isFile(mode) && !FS.isLink(mode)) {
    throw new FS.ErrnoError(28);
@@ -1982,7 +1985,7 @@ var NODEFS = {
 };
 
 var NODERAWFS = {
- init: (input, output, error) => {
+ init(input, output, error) {
   VFS.init(input, output, error);
   var _wrapNodeError = function(func) {
    return function() {
@@ -2000,10 +2003,10 @@ var NODERAWFS = {
    FS[_key] = _wrapNodeError(NODERAWFS[_key]);
   }
  },
- lookup: function(parent, name) {
+ lookup(parent, name) {
   return FS.lookupPath(`${parent.path}/${name}`).node;
  },
- lookupPath: function(path, opts = {}) {
+ lookupPath(path, opts = {}) {
   if (opts.parent) {
    path = nodePath.dirname(path);
   }
@@ -2019,13 +2022,13 @@ var NODERAWFS = {
    }
   };
  },
- cwd: function() {
+ cwd() {
   return process.cwd();
  },
- chdir: function() {
+ chdir() {
   process.chdir.apply(void 0, arguments);
  },
- mknod: function(path, mode) {
+ mknod(path, mode) {
   if (FS.isDir(path)) {
    fs.mkdirSync(path, mode);
   } else {
@@ -2034,70 +2037,61 @@ var NODERAWFS = {
    });
   }
  },
- mkdir: function() {
+ mkdir() {
   fs.mkdirSync.apply(void 0, arguments);
  },
- symlink: function() {
+ symlink() {
   fs.symlinkSync.apply(void 0, arguments);
  },
- rename: function() {
+ rename() {
   fs.renameSync.apply(void 0, arguments);
  },
- rmdir: function() {
+ rmdir() {
   fs.rmdirSync.apply(void 0, arguments);
  },
- readdir: function() {
+ readdir() {
   return [ ".", ".." ].concat(fs.readdirSync.apply(void 0, arguments));
  },
- unlink: function() {
+ unlink() {
   fs.unlinkSync.apply(void 0, arguments);
  },
- readlink: function() {
+ readlink() {
   return fs.readlinkSync.apply(void 0, arguments);
  },
- stat: function() {
+ stat() {
   return fs.statSync.apply(void 0, arguments);
  },
- lstat: function() {
+ lstat() {
   return fs.lstatSync.apply(void 0, arguments);
  },
- chmod: function() {
+ chmod() {
   fs.chmodSync.apply(void 0, arguments);
  },
- fchmod: function(fd, mode) {
-  var stream = FS.getStream(fd);
-  if (!stream) {
-   throw new FS.ErrnoError(8);
-  }
+ fchmod(fd, mode) {
+  var stream = FS.getStreamChecked(fd);
   fs.fchmodSync(stream.nfd, mode);
  },
- chown: function() {
+ chown() {
   fs.chownSync.apply(void 0, arguments);
  },
- fchown: function(fd, owner, group) {
-  var stream = FS.getStream(fd);
-  if (!stream) {
-   throw new FS.ErrnoError(8);
-  }
+ fchown(fd, owner, group) {
+  var stream = FS.getStreamChecked(fd);
   fs.fchownSync(stream.nfd, owner, group);
  },
- truncate: function() {
+ truncate() {
   fs.truncateSync.apply(void 0, arguments);
  },
- ftruncate: function(fd, len) {
+ ftruncate(fd, len) {
   if (len < 0) {
    throw new FS.ErrnoError(28);
   }
-  var stream = FS.getStream(fd);
-  if (!stream) {
-   throw new FS.ErrnoError(8);
-  }
+  var stream = FS.getStreamChecked(fd);
   fs.ftruncateSync(stream.nfd, len);
  },
- utime: function(path, atime, mtime) {
+ utime(path, atime, mtime) {
   fs.utimesSync(path, atime / 1e3, mtime / 1e3);
  },
- open: function(path, flags, mode) {
+ open(path, flags, mode) {
   if (typeof flags == "string") {
    flags = FS_modeStringToFlags(flags);
   }
@@ -2126,7 +2120,7 @@ var NODERAWFS = {
    seekable: true
   });
  },
- createStream: function(stream, fd) {
+ createStream(stream, fd) {
   var rtn = VFS.createStream(stream, fd);
   if (typeof rtn.shared.refcnt == "undefined") {
    rtn.shared.refcnt = 1;
@@ -2135,13 +2129,13 @@ var NODERAWFS = {
   }
   return rtn;
  },
- close: function(stream) {
+ close(stream) {
   VFS.closeStream(stream.fd);
   if (!stream.stream_ops && --stream.shared.refcnt === 0) {
    fs.closeSync(stream.nfd);
   }
  },
- llseek: function(stream, offset, whence) {
+ llseek(stream, offset, whence) {
   if (stream.stream_ops) {
    return VFS.llseek(stream, offset, whence);
   }
@@ -2159,7 +2153,7 @@ var NODERAWFS = {
   stream.position = position;
   return position;
  },
- read: function(stream, buffer, offset, length, position) {
+ read(stream, buffer, offset, length, position) {
   if (stream.stream_ops) {
    return VFS.read(stream, buffer, offset, length, position);
   }
@@ -2169,7 +2163,7 @@ var NODERAWFS = {
   if (!seeking) stream.position += bytesRead;
   return bytesRead;
  },
- write: function(stream, buffer, offset, length, position) {
+ write(stream, buffer, offset, length, position) {
   if (stream.stream_ops) {
    return VFS.write(stream, buffer, offset, length, position);
   }
@@ -2182,10 +2176,10 @@ var NODERAWFS = {
   if (!seeking) stream.position += bytesWritten;
   return bytesWritten;
  },
- allocate: function() {
+ allocate() {
   throw new FS.ErrnoError(138);
  },
- mmap: function(stream, length, position, prot, flags) {
+ mmap(stream, length, position, prot, flags) {
   if (stream.stream_ops) {
    return VFS.mmap(stream, length, position, prot, flags);
   }
@@ -2196,17 +2190,17 @@ var NODERAWFS = {
    allocated: true
   };
  },
- msync: function(stream, buffer, offset, length, mmapFlags) {
+ msync(stream, buffer, offset, length, mmapFlags) {
   if (stream.stream_ops) {
    return VFS.msync(stream, buffer, offset, length, mmapFlags);
   }
   FS.write(stream, buffer, 0, length, offset);
   return 0;
  },
- munmap: function() {
+ munmap() {
   return 0;
  },
- ioctl: function() {
+ ioctl() {
   throw new FS.ErrnoError(59);
  }
 };
@@ -2335,33 +2329,15 @@ var FS = {
  destroyNode: node => {
   FS.hashRemoveNode(node);
  },
- isRoot: node => {
-  return node === node.parent;
- },
- isMountpoint: node => {
-  return !!node.mounted;
- },
- isFile: mode => {
-  return (mode & 61440) === 32768;
- },
- isDir: mode => {
-  return (mode & 61440) === 16384;
- },
- isLink: mode => {
-  return (mode & 61440) === 40960;
- },
- isChrdev: mode => {
-  return (mode & 61440) === 8192;
- },
- isBlkdev: mode => {
-  return (mode & 61440) === 24576;
- },
- isFIFO: mode => {
-  return (mode & 61440) === 4096;
- },
- isSocket: mode => {
-  return (mode & 49152) === 49152;
- },
+ isRoot: node => node === node.parent,
+ isMountpoint: node => !!node.mounted,
+ isFile: mode => (mode & 61440) === 32768,
+ isDir: mode => (mode & 61440) === 16384,
+ isLink: mode => (mode & 61440) === 40960,
+ isChrdev: mode => (mode & 61440) === 8192,
+ isBlkdev: mode => (mode & 61440) === 24576,
+ isFIFO: mode => (mode & 61440) === 4096,
+ isSocket: mode => (mode & 49152) === 49152,
  flagsToPermissionString: flag => {
   var perms = [ "r", "w", "rw" ][flag & 3];
   if (flag & 512) {
@@ -2442,6 +2418,13 @@ var FS = {
   }
   throw new FS.ErrnoError(33);
  },
+ getStreamChecked: fd => {
+  var stream = FS.getStream(fd);
+  if (!stream) {
+   throw new FS.ErrnoError(8);
+  }
+  return stream;
+ },
  getStream: fd => FS.streams[fd],
  createStream: (stream, fd = -1) => {
   if (!FS.FSStream) {
@@ -2451,47 +2434,47 @@ var FS = {
    FS.FSStream.prototype = {};
    Object.defineProperties(FS.FSStream.prototype, {
     object: {
-     get: function() {
+     get() {
       return this.node;
      },
-     set: function(val) {
+     set(val) {
       this.node = val;
      }
     },
     isRead: {
-     get: function() {
+     get() {
       return (this.flags & 2097155) !== 1;
      }
     },
     isWrite: {
-     get: function() {
+     get() {
       return (this.flags & 2097155) !== 0;
      }
     },
     isAppend: {
-     get: function() {
+     get() {
       return this.flags & 1024;
      }
     },
     flags: {
-     get: function() {
+     get() {
       return this.shared.flags;
      },
-     set: function(val) {
+     set(val) {
       this.shared.flags = val;
      }
     },
     position: {
-     get: function() {
+     get() {
       return this.shared.position;
      },
-     set: function(val) {
+     set(val) {
       this.shared.position = val;
      }
     }
    });
   }
-  stream = Object.assign(new FS.FSStream(), stream);
+  stream = Object.assign(new FS.FSStream, stream);
   if (fd == -1) {
    fd = FS.nextfd();
   }
@@ -2629,9 +2612,7 @@ var FS = {
   var idx = node.mount.mounts.indexOf(mount);
   node.mount.mounts.splice(idx, 1);
  },
- lookup: (parent, name) => {
-  return parent.node_ops.lookup(parent, name);
- },
+ lookup: (parent, name) => parent.node_ops.lookup(parent, name),
  mknod: (path, mode, dev) => {
   var lookup = FS.lookupPath(path, {
    parent: true
@@ -2845,9 +2826,7 @@ var FS = {
   }
   return node.node_ops.getattr(node);
  },
- lstat: path => {
-  return FS.stat(path, true);
- },
+ lstat: path => FS.stat(path, true),
  chmod: (path, mode, dontFollow) => {
   var node;
   if (typeof path == "string") {
@@ -2870,10 +2849,7 @@ var FS = {
   FS.chmod(path, mode, true);
  },
  fchmod: (fd, mode) => {
-  var stream = FS.getStream(fd);
-  if (!stream) {
-   throw new FS.ErrnoError(8);
-  }
+  var stream = FS.getStreamChecked(fd);
   FS.chmod(stream.node, mode);
  },
  chown: (path, uid, gid, dontFollow) => {
@@ -2897,10 +2873,7 @@ var FS = {
   FS.chown(path, uid, gid, true);
  },
  fchown: (fd, uid, gid) => {
-  var stream = FS.getStream(fd);
-  if (!stream) {
-   throw new FS.ErrnoError(8);
-  }
+  var stream = FS.getStreamChecked(fd);
   FS.chown(stream.node, uid, gid);
  },
  truncate: (path, len) => {
@@ -2935,10 +2908,7 @@ var FS = {
   });
  },
  ftruncate: (fd, len) => {
-  var stream = FS.getStream(fd);
-  if (!stream) {
-   throw new FS.ErrnoError(8);
-  }
+  var stream = FS.getStreamChecked(fd);
   if ((stream.flags & 2097155) === 0) {
    throw new FS.ErrnoError(28);
   }
@@ -3043,9 +3013,7 @@ var FS = {
   }
   stream.fd = null;
  },
- isClosed: stream => {
-  return stream.fd === null;
- },
+ isClosed: stream => stream.fd === null,
  llseek: (stream, offset, whence) => {
   if (FS.isClosed(stream)) {
    throw new FS.ErrnoError(8);
@@ -3247,8 +3215,7 @@ var FS = {
     node.node_ops = {
      lookup: (parent, name) => {
       var fd = +name;
-      var stream = FS.getStream(fd);
-      if (!stream) throw new FS.ErrnoError(8);
+      var stream = FS.getStreamChecked(fd);
       var ret = {
        parent: null,
        mount: {
@@ -3297,7 +3264,7 @@ var FS = {
    this.setErrno(errno);
    this.message = "FS error";
   };
-  FS.ErrnoError.prototype = new Error();
+  FS.ErrnoError.prototype = new Error;
   FS.ErrnoError.prototype.constructor = FS.ErrnoError;
   [ 44 ].forEach(code => {
    FS.genericErrors[code] = new FS.ErrnoError(code);
@@ -3504,7 +3471,7 @@ var FS = {
    this.getter = getter;
   };
   LazyUint8Array.prototype.cacheLength = function LazyUint8Array_cacheLength() {
-   var xhr = new XMLHttpRequest();
+   var xhr = new XMLHttpRequest;
    xhr.open("HEAD", url, false);
    xhr.send(null);
    if (!(xhr.status >= 200 && xhr.status < 300 || xhr.status === 304)) throw new Error("Couldn't load " + url + ". Status: " + xhr.status);
@@ -3517,7 +3484,7 @@ var FS = {
    var doXHR = (from, to) => {
     if (from > to) throw new Error("invalid range (" + from + ", " + to + ") or no bytes requested!");
     if (to > datalength - 1) throw new Error("only " + datalength + " bytes available! programmer error!");
-    var xhr = new XMLHttpRequest();
+    var xhr = new XMLHttpRequest;
     xhr.open("GET", url, false);
     if (datalength !== chunkSize) xhr.setRequestHeader("Range", "bytes=" + from + "-" + to);
     xhr.responseType = "arraybuffer";
@@ -3554,7 +3521,7 @@ var FS = {
   };
   if (typeof XMLHttpRequest != "undefined") {
    if (!ENVIRONMENT_IS_WORKER) throw "Cannot do synchronous binary XHRs outside webworkers in modern browsers. Use --embed-file or --preload-file in emcc";
-   var lazyArray = new LazyUint8Array();
+   var lazyArray = new LazyUint8Array;
    Object.defineProperties(lazyArray, {
     length: {
      get: function() {
@@ -3642,9 +3609,7 @@ var FS = {
  }
 };
 
-function UTF8ToString(ptr, maxBytesToRead) {
- return ptr ? UTF8ArrayToString(GROWABLE_HEAP_U8(), ptr, maxBytesToRead) : "";
-}
+var UTF8ToString = (ptr, maxBytesToRead) => ptr ? UTF8ArrayToString(GROWABLE_HEAP_U8(), ptr, maxBytesToRead) : "";
 
 var SYSCALLS = {
  DEFAULT_POLLMASK: 5,
@@ -3677,25 +3642,24 @@ var SYSCALLS = {
    throw e;
   }
   GROWABLE_HEAP_I32()[buf >> 2] = stat.dev;
-  GROWABLE_HEAP_I32()[buf + 8 >> 2] = stat.ino;
-  GROWABLE_HEAP_I32()[buf + 12 >> 2] = stat.mode;
-  GROWABLE_HEAP_U32()[buf + 16 >> 2] = stat.nlink;
-  GROWABLE_HEAP_I32()[buf + 20 >> 2] = stat.uid;
-  GROWABLE_HEAP_I32()[buf + 24 >> 2] = stat.gid;
-  GROWABLE_HEAP_I32()[buf + 28 >> 2] = stat.rdev;
-  HEAP64[buf + 40 >> 3] = BigInt(stat.size);
-  GROWABLE_HEAP_I32()[buf + 48 >> 2] = 4096;
-  GROWABLE_HEAP_I32()[buf + 52 >> 2] = stat.blocks;
+  GROWABLE_HEAP_I32()[buf + 4 >> 2] = stat.mode;
+  GROWABLE_HEAP_U32()[buf + 8 >> 2] = stat.nlink;
+  GROWABLE_HEAP_I32()[buf + 12 >> 2] = stat.uid;
+  GROWABLE_HEAP_I32()[buf + 16 >> 2] = stat.gid;
+  GROWABLE_HEAP_I32()[buf + 20 >> 2] = stat.rdev;
+  HEAP64[buf + 24 >> 3] = BigInt(stat.size);
+  GROWABLE_HEAP_I32()[buf + 32 >> 2] = 4096;
+  GROWABLE_HEAP_I32()[buf + 36 >> 2] = stat.blocks;
   var atime = stat.atime.getTime();
   var mtime = stat.mtime.getTime();
   var ctime = stat.ctime.getTime();
-  HEAP64[buf + 56 >> 3] = BigInt(Math.floor(atime / 1e3));
-  GROWABLE_HEAP_U32()[buf + 64 >> 2] = atime % 1e3 * 1e3;
-  HEAP64[buf + 72 >> 3] = BigInt(Math.floor(mtime / 1e3));
-  GROWABLE_HEAP_U32()[buf + 80 >> 2] = mtime % 1e3 * 1e3;
-  HEAP64[buf + 88 >> 3] = BigInt(Math.floor(ctime / 1e3));
-  GROWABLE_HEAP_U32()[buf + 96 >> 2] = ctime % 1e3 * 1e3;
-  HEAP64[buf + 104 >> 3] = BigInt(stat.ino);
+  HEAP64[buf + 40 >> 3] = BigInt(Math.floor(atime / 1e3));
+  GROWABLE_HEAP_U32()[buf + 48 >> 2] = atime % 1e3 * 1e3;
+  HEAP64[buf + 56 >> 3] = BigInt(Math.floor(mtime / 1e3));
+  GROWABLE_HEAP_U32()[buf + 64 >> 2] = mtime % 1e3 * 1e3;
+  HEAP64[buf + 72 >> 3] = BigInt(Math.floor(ctime / 1e3));
+  GROWABLE_HEAP_U32()[buf + 80 >> 2] = ctime % 1e3 * 1e3;
+  HEAP64[buf + 88 >> 3] = BigInt(stat.ino);
   return 0;
  },
  doMsync: function(addr, stream, len, flags, offset) {
@@ -3709,18 +3673,17 @@ var SYSCALLS = {
   FS.msync(stream, buffer, offset, len, flags);
  },
  varargs: undefined,
- get: function() {
+ get() {
   SYSCALLS.varargs += 4;
   var ret = GROWABLE_HEAP_I32()[SYSCALLS.varargs - 4 >> 2];
   return ret;
  },
- getStr: function(ptr) {
+ getStr(ptr) {
   var ret = UTF8ToString(ptr);
   return ret;
  },
  getStreamFromFD: function(fd) {
-  var stream = FS.getStream(fd);
-  if (!stream) throw new FS.ErrnoError(8);
+  var stream = FS.getStreamChecked(fd);
   return stream;
  }
 };
@@ -3736,23 +3699,23 @@ function _proc_exit(code) {
  quit_(code, new ExitStatus(code));
 }
 
-function exitJS(status, implicit) {
+var exitJS = (status, implicit) => {
  EXITSTATUS = status;
  if (ENVIRONMENT_IS_PTHREAD) {
   exitOnMainThread(status);
   throw "unwind";
  }
  _proc_exit(status);
-}
+};
 
 var _exit = exitJS;
 
-function handleException(e) {
+var handleException = e => {
  if (e instanceof ExitStatus || e == "unwind") {
   return EXITSTATUS;
  }
  quit_(1, e);
-}
+};
 
 var PThread = {
  unusedWorkers: [],
@@ -3806,7 +3769,6 @@ var PThread = {
   worker.onmessage = e => {
    var d = e["data"];
    var cmd = d["cmd"];
-   if (worker.pthread_ptr) PThread.currentProxiedOperationCallerThread = worker.pthread_ptr;
    if (d["targetThread"] && d["targetThread"] != _pthread_self()) {
     var targetWorker = PThread.pthreads[d.targetThread];
     if (targetWorker) {
@@ -3814,7 +3776,6 @@ var PThread = {
     } else {
      err('Internal error! Worker sent a message "' + cmd + '" to target pthread ' + d["targetThread"] + ", but that thread no longer exists!");
     }
-    PThread.currentProxiedOperationCallerThread = undefined;
     return;
    }
    if (cmd === "checkMailbox") {
@@ -3830,10 +3791,6 @@ var PThread = {
    } else if (cmd === "loaded") {
     worker.loaded = true;
     onFinishedLoading(worker);
-   } else if (cmd === "print") {
-    out("Thread " + d["threadId"] + ": " + d["text"]);
-   } else if (cmd === "printErr") {
-    err("Thread " + d["threadId"] + ": " + d["text"]);
    } else if (cmd === "alert") {
     alert("Thread " + d["threadId"] + ": " + d["text"]);
    } else if (d.target === "setimmediate") {
@@ -3843,7 +3800,6 @@ var PThread = {
    } else if (cmd) {
     err("worker sent an unknown command " + cmd);
    }
-   PThread.currentProxiedOperationCallerThread = undefined;
   };
   worker.onerror = e => {
    var message = "worker sent an error!";
@@ -3895,11 +3851,11 @@ var PThread = {
 
 Module["PThread"] = PThread;
 
-function callRuntimeCallbacks(callbacks) {
+var callRuntimeCallbacks = callbacks => {
  while (callbacks.length > 0) {
   callbacks.shift()(Module);
  }
-}
+};
 
 function establishStackSpace() {
  var pthread_ptr = _pthread_self();
@@ -3951,22 +3907,25 @@ function getValue(ptr, type = "i8") {
 
 var wasmTableMirror = [];
 
-function getWasmTableEntry(funcPtr) {
+var getWasmTableEntry = funcPtr => {
  var func = wasmTableMirror[funcPtr];
  if (!func) {
   if (funcPtr >= wasmTableMirror.length) wasmTableMirror.length = funcPtr + 1;
   wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
  }
  return func;
-}
+};
 
 function invokeEntryPoint(ptr, arg) {
  var result = getWasmTableEntry(ptr)(arg);
- if (keepRuntimeAlive()) {
-  PThread.setExitStatus(result);
- } else {
-  __emscripten_thread_exit(result);
+ function finish(result) {
+  if (keepRuntimeAlive()) {
+   PThread.setExitStatus(result);
+  } else {
+   __emscripten_thread_exit(result);
+  }
  }
+ finish(result);
 }
 
 Module["invokeEntryPoint"] = invokeEntryPoint;
@@ -4015,13 +3974,11 @@ function setValue(ptr, value, type = "i8") {
  }
 }
 
-function ___assert_fail(condition, filename, line, func) {
+var ___assert_fail = (condition, filename, line, func) => {
  abort(`Assertion failed: ${UTF8ToString(condition)}, at: ` + [ filename ? UTF8ToString(filename) : "unknown filename", line, func ? UTF8ToString(func) : "unknown function" ]);
-}
+};
 
-function ___call_sighandler(fp, sig) {
- getWasmTableEntry(fp)(sig);
-}
+var ___call_sighandler = (fp, sig) => getWasmTableEntry(fp)(sig);
 
 var exceptionCaught = [];
 
@@ -4042,7 +3999,7 @@ function ___cxa_begin_catch(ptr) {
 var exceptionLast = 0;
 
 function ___cxa_end_catch() {
- _setThrew(0);
+ _setThrew(0, 0);
  var info = exceptionCaught.pop();
  ___cxa_decrement_exception_refcount(info.excPtr);
  exceptionLast = 0;
@@ -4106,7 +4063,7 @@ function ___resumeException(ptr) {
  throw exceptionLast;
 }
 
-function ___cxa_find_matching_catch() {
+var findMatchingCatch = args => {
  var thrown = exceptionLast;
  if (!thrown) {
   setTempRet0(0);
@@ -4119,8 +4076,8 @@ function ___cxa_find_matching_catch() {
   setTempRet0(0);
   return thrown;
  }
- for (var i = 0; i < arguments.length; i++) {
-  var caughtType = arguments[i];
+ for (var arg in args) {
+  var caughtType = args[arg];
   if (caughtType === 0 || caughtType === thrownType) {
    break;
   }
@@ -4132,13 +4089,13 @@ function ___cxa_find_matching_catch() {
  }
  setTempRet0(thrownType);
  return thrown;
-}
+};
 
-var ___cxa_find_matching_catch_2 = ___cxa_find_matching_catch;
+var ___cxa_find_matching_catch_2 = () => findMatchingCatch([]);
 
-var ___cxa_find_matching_catch_3 = ___cxa_find_matching_catch;
+var ___cxa_find_matching_catch_3 = arg0 => findMatchingCatch([ arg0 ]);
 
-var ___cxa_find_matching_catch_4 = ___cxa_find_matching_catch;
+var ___cxa_find_matching_catch_4 = (arg0, arg1) => findMatchingCatch([ arg0, arg1 ]);
 
 function ___cxa_rethrow() {
  var info = exceptionCaught.pop();
@@ -4169,7 +4126,7 @@ function ___cxa_uncaught_exceptions() {
 }
 
 function ___emscripten_init_main_thread_js(tb) {
- __emscripten_thread_init(tb, !ENVIRONMENT_IS_WORKER, 1, !ENVIRONMENT_IS_WEB, 65536);
+ __emscripten_thread_init(tb, !ENVIRONMENT_IS_WORKER, 1, !ENVIRONMENT_IS_WEB, 65536, false);
  PThread.threadInitTLS();
 }
 
@@ -4250,10 +4207,10 @@ function ___syscall_faccessat(dirfd, path, amode, flags) {
  }
 }
 
-function setErrNo(value) {
+var setErrNo = value => {
  GROWABLE_HEAP_I32()[___errno_location() >> 2] = value;
  return value;
-}
+};
 
 function ___syscall_fcntl64(fd, cmd, varargs) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(6, 1, fd, cmd, varargs);
@@ -4338,9 +4295,9 @@ function bigintToI53Checked(num) {
 
 function ___syscall_ftruncate64(fd, length) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(8, 1, fd, length);
+ length = bigintToI53Checked(length);
  try {
-  length = bigintToI53Checked(length);
-  if (isNaN(length)) return -61;
+  if (isNaN(length)) return 61;
   FS.ftruncate(fd, length);
   return 0;
  } catch (e) {
@@ -4349,9 +4306,7 @@ function ___syscall_ftruncate64(fd, length) {
  }
 }
 
-function stringToUTF8(str, outPtr, maxBytesToWrite) {
- return stringToUTF8Array(str, GROWABLE_HEAP_U8(), outPtr, maxBytesToWrite);
-}
+var stringToUTF8 = (str, outPtr, maxBytesToWrite) => stringToUTF8Array(str, GROWABLE_HEAP_U8(), outPtr, maxBytesToWrite);
 
 function ___syscall_getcwd(buf, size) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(9, 1, buf, size);
@@ -4375,20 +4330,60 @@ function ___syscall_ioctl(fd, op, varargs) {
   var stream = SYSCALLS.getStreamFromFD(fd);
   switch (op) {
   case 21509:
+   {
+    if (!stream.tty) return -59;
+    return 0;
+   }
+
   case 21505:
    {
     if (!stream.tty) return -59;
+    if (stream.tty.ops.ioctl_tcgets) {
+     var termios = stream.tty.ops.ioctl_tcgets(stream);
+     var argp = SYSCALLS.get();
+     GROWABLE_HEAP_I32()[argp >> 2] = termios.c_iflag || 0;
+     GROWABLE_HEAP_I32()[argp + 4 >> 2] = termios.c_oflag || 0;
+     GROWABLE_HEAP_I32()[argp + 8 >> 2] = termios.c_cflag || 0;
+     GROWABLE_HEAP_I32()[argp + 12 >> 2] = termios.c_lflag || 0;
+     for (var i = 0; i < 32; i++) {
+      GROWABLE_HEAP_I8()[argp + i + 17 >> 0] = termios.c_cc[i] || 0;
+     }
+     return 0;
+    }
     return 0;
    }
 
   case 21510:
   case 21511:
   case 21512:
+   {
+    if (!stream.tty) return -59;
+    return 0;
+   }
+
   case 21506:
   case 21507:
   case 21508:
    {
     if (!stream.tty) return -59;
+    if (stream.tty.ops.ioctl_tcsets) {
+     var argp = SYSCALLS.get();
+     var c_iflag = GROWABLE_HEAP_I32()[argp >> 2];
+     var c_oflag = GROWABLE_HEAP_I32()[argp + 4 >> 2];
+     var c_cflag = GROWABLE_HEAP_I32()[argp + 8 >> 2];
+     var c_lflag = GROWABLE_HEAP_I32()[argp + 12 >> 2];
+     var c_cc = [];
+     for (var i = 0; i < 32; i++) {
+      c_cc.push(GROWABLE_HEAP_I8()[argp + i + 17 >> 0]);
+     }
+     return stream.tty.ops.ioctl_tcsets(stream.tty, op, {
+      c_iflag: c_iflag,
+      c_oflag: c_oflag,
+      c_cflag: c_cflag,
+      c_lflag: c_lflag,
+      c_cc: c_cc
+     });
+    }
     return 0;
    }
 
@@ -4415,10 +4410,22 @@ function ___syscall_ioctl(fd, op, varargs) {
   case 21523:
    {
     if (!stream.tty) return -59;
+    if (stream.tty.ops.ioctl_tiocgwinsz) {
+     var winsize = stream.tty.ops.ioctl_tiocgwinsz(stream.tty);
+     var argp = SYSCALLS.get();
+     GROWABLE_HEAP_I16()[argp >> 1] = winsize[0];
+     GROWABLE_HEAP_I16()[argp + 2 >> 1] = winsize[1];
+    }
     return 0;
    }
 
   case 21524:
+   {
+    if (!stream.tty) return -59;
+    return 0;
+   }
+
+  case 21515:
    {
     if (!stream.tty) return -59;
     return 0;
@@ -4677,11 +4684,9 @@ function __emnapi_worker_unref(pid) {
 
 var nowIsMonotonic = true;
 
-function __emscripten_get_now_is_monotonic() {
- return nowIsMonotonic;
-}
+var __emscripten_get_now_is_monotonic = () => nowIsMonotonic;
 
-function maybeExit() {
+var maybeExit = () => {
  if (!keepRuntimeAlive()) {
   try {
    if (ENVIRONMENT_IS_PTHREAD) __emscripten_thread_exit(EXITSTATUS); else _exit(EXITSTATUS);
@@ -4689,9 +4694,9 @@ function maybeExit() {
    handleException(e);
   }
  }
-}
+};
 
-function callUserCallback(func) {
+var callUserCallback = func => {
  if (ABORT) {
   return;
  }
@@ -4701,7 +4706,7 @@ function callUserCallback(func) {
  } catch (e) {
   handleException(e);
  }
-}
+};
 
 function __emscripten_thread_mailbox_await(pthread_ptr) {
  if (typeof Atomics.waitAsync === "function") {
@@ -4714,17 +4719,17 @@ function __emscripten_thread_mailbox_await(pthread_ptr) {
 
 Module["__emscripten_thread_mailbox_await"] = __emscripten_thread_mailbox_await;
 
-function checkMailbox() {
+var checkMailbox = function() {
  var pthread_ptr = _pthread_self();
  if (pthread_ptr) {
   __emscripten_thread_mailbox_await(pthread_ptr);
   callUserCallback(() => __emscripten_check_mailbox());
  }
-}
+};
 
 Module["checkMailbox"] = checkMailbox;
 
-function __emscripten_notify_mailbox_postmessage(targetThreadId, currThreadId, mainThreadId) {
+var __emscripten_notify_mailbox_postmessage = function(targetThreadId, currThreadId, mainThreadId) {
  if (targetThreadId == currThreadId) {
   setTimeout(() => checkMailbox());
  } else if (ENVIRONMENT_IS_PTHREAD) {
@@ -4741,7 +4746,7 @@ function __emscripten_notify_mailbox_postmessage(targetThreadId, currThreadId, m
    "cmd": "checkMailbox"
   });
  }
-}
+};
 
 function __emscripten_set_offscreencanvas_size(target, width, height) {
  return -1;
@@ -4753,16 +4758,14 @@ function __emscripten_thread_set_strongref(thread) {
  }
 }
 
-function __emscripten_throw_longjmp() {
+var __emscripten_throw_longjmp = () => {
  throw Infinity;
-}
-
-function readI53FromI64(ptr) {
- return GROWABLE_HEAP_U32()[ptr >> 2] + GROWABLE_HEAP_I32()[ptr + 4 >> 2] * 4294967296;
-}
+};
 
 function __gmtime_js(time, tmPtr) {
- var date = new Date(readI53FromI64(time) * 1e3);
+ time = bigintToI53Checked(time);
+ tmPtr = bigintToI53Checked(tmPtr);
+ var date = new Date(time * 1e3);
  GROWABLE_HEAP_I32()[tmPtr >> 2] = date.getUTCSeconds();
  GROWABLE_HEAP_I32()[tmPtr + 4 >> 2] = date.getUTCMinutes();
  GROWABLE_HEAP_I32()[tmPtr + 8 >> 2] = date.getUTCHours();
@@ -4775,23 +4778,23 @@ function __gmtime_js(time, tmPtr) {
  GROWABLE_HEAP_I32()[tmPtr + 28 >> 2] = yday;
 }
 
-function isLeapYear(year) {
- return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-}
+var isLeapYear = year => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 
 var MONTH_DAYS_LEAP_CUMULATIVE = [ 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335 ];
 
 var MONTH_DAYS_REGULAR_CUMULATIVE = [ 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 ];
 
-function ydayFromDate(date) {
+var ydayFromDate = date => {
  var leap = isLeapYear(date.getFullYear());
  var monthDaysCumulative = leap ? MONTH_DAYS_LEAP_CUMULATIVE : MONTH_DAYS_REGULAR_CUMULATIVE;
  var yday = monthDaysCumulative[date.getMonth()] + date.getDate() - 1;
  return yday;
-}
+};
 
 function __localtime_js(time, tmPtr) {
- var date = new Date(readI53FromI64(time) * 1e3);
+ time = bigintToI53Checked(time);
+ tmPtr = bigintToI53Checked(tmPtr);
+ var date = new Date(time * 1e3);
  GROWABLE_HEAP_I32()[tmPtr >> 2] = date.getSeconds();
  GROWABLE_HEAP_I32()[tmPtr + 4 >> 2] = date.getMinutes();
  GROWABLE_HEAP_I32()[tmPtr + 8 >> 2] = date.getHours();
@@ -4809,11 +4812,16 @@ function __localtime_js(time, tmPtr) {
  GROWABLE_HEAP_I32()[tmPtr + 32 >> 2] = dst;
 }
 
-function __mmap_js(len, prot, flags, fd, off, allocated, addr) {
- if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(17, 1, len, prot, flags, fd, off, allocated, addr);
+function __mmap_js(len, prot, flags, fd, offset, allocated, addr) {
+ if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(17, 1, len, prot, flags, fd, offset, allocated, addr);
+ len = bigintToI53Checked(len);
+ offset = bigintToI53Checked(offset);
+ allocated = bigintToI53Checked(allocated);
+ addr = bigintToI53Checked(addr);
  try {
+  if (isNaN(offset)) return 61;
   var stream = SYSCALLS.getStreamFromFD(fd);
-  var res = FS.mmap(stream, len, off, prot, flags);
+  var res = FS.mmap(stream, len, offset, prot, flags);
   var ptr = res.ptr;
   GROWABLE_HEAP_I32()[allocated >> 2] = res.allocated;
   GROWABLE_HEAP_U32()[addr >> 2] = ptr;
@@ -4826,7 +4834,11 @@ function __mmap_js(len, prot, flags, fd, off, allocated, addr) {
 
 function __munmap_js(addr, len, prot, flags, fd, offset) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(18, 1, addr, len, prot, flags, fd, offset);
+ addr = bigintToI53Checked(addr);
+ len = bigintToI53Checked(len);
+ offset = bigintToI53Checked(offset);
  try {
+  if (isNaN(offset)) return 61;
   var stream = SYSCALLS.getStreamFromFD(fd);
   if (prot & 2) {
    SYSCALLS.doMsync(addr, stream, len, flags, offset);
@@ -4838,15 +4850,15 @@ function __munmap_js(addr, len, prot, flags, fd, offset) {
  }
 }
 
-function stringToNewUTF8(str) {
+var stringToNewUTF8 = str => {
  var size = lengthBytesUTF8(str) + 1;
  var ret = _malloc(size);
  if (ret) stringToUTF8(str, ret, size);
  return ret;
-}
+};
 
-function __tzset_js(timezone, daylight, tzname) {
- var currentYear = new Date().getFullYear();
+var __tzset_js = (timezone, daylight, tzname) => {
+ var currentYear = (new Date).getFullYear();
  var winter = new Date(currentYear, 0, 1);
  var summer = new Date(currentYear, 6, 1);
  var winterOffset = winter.getTimezoneOffset();
@@ -4869,24 +4881,24 @@ function __tzset_js(timezone, daylight, tzname) {
   GROWABLE_HEAP_U32()[tzname >> 2] = summerNamePtr;
   GROWABLE_HEAP_U32()[tzname + 4 >> 2] = winterNamePtr;
  }
-}
+};
 
-function _abort() {
+var _abort = () => {
  abort("");
-}
+};
 
 function _emnapi_is_node_binding_available() {
  return emnapiNodeBinding ? 1 : 0;
 }
 
-function warnOnce(text) {
+var warnOnce = text => {
  if (!warnOnce.shown) warnOnce.shown = {};
  if (!warnOnce.shown[text]) {
   warnOnce.shown[text] = 1;
   if (ENVIRONMENT_IS_NODE) text = "warning: " + text;
   err(text);
  }
-}
+};
 
 function _emscripten_check_blocking_allowed() {}
 
@@ -4894,28 +4906,20 @@ function _emscripten_date_now() {
  return Date.now();
 }
 
-function runtimeKeepalivePush() {
+var runtimeKeepalivePush = () => {
  runtimeKeepaliveCounter += 1;
-}
+};
 
-function _emscripten_exit_with_live_runtime() {
+var _emscripten_exit_with_live_runtime = () => {
  runtimeKeepalivePush();
  throw "unwind";
-}
+};
 
-function getHeapMax() {
- return 2147483648;
-}
+var getHeapMax = () => 2147483648;
 
-function _emscripten_get_heap_max() {
- return getHeapMax();
-}
+var _emscripten_get_heap_max = () => getHeapMax();
 
 var _emscripten_get_now;
-
-if (ENVIRONMENT_IS_NODE) {
- global.performance = require("perf_hooks").performance;
-}
 
 _emscripten_get_now = () => performance.timeOrigin + performance.now();
 
@@ -4924,14 +4928,14 @@ function _emscripten_num_logical_cores() {
  return navigator["hardwareConcurrency"];
 }
 
-function withStackSave(f) {
+var withStackSave = f => {
  var stack = stackSave();
  var ret = f();
  stackRestore(stack);
  return ret;
-}
+};
 
-function proxyToMainThread(index, sync) {
+var proxyToMainThread = function(index, sync) {
  var numCallArgs = arguments.length - 2;
  var outerArgs = arguments;
  return withStackSave(() => {
@@ -4950,11 +4954,12 @@ function proxyToMainThread(index, sync) {
   }
   return __emscripten_run_in_main_runtime_thread_js(index, serializedNumCallArgs, args, sync);
  });
-}
+};
 
 var emscripten_receive_on_main_thread_js_callArgs = [];
 
-function _emscripten_receive_on_main_thread_js(index, numCallArgs, args) {
+function _emscripten_receive_on_main_thread_js(index, callingThread, numCallArgs, args) {
+ PThread.currentProxiedOperationCallerThread = callingThread;
  numCallArgs /= 2;
  emscripten_receive_on_main_thread_js_callArgs.length = numCallArgs;
  var b = args >> 3;
@@ -4969,7 +4974,7 @@ function _emscripten_receive_on_main_thread_js(index, numCallArgs, args) {
  return func.apply(null, emscripten_receive_on_main_thread_js_callArgs);
 }
 
-function emscripten_realloc_buffer(size) {
+var growMemory = size => {
  var b = wasmMemory.buffer;
  var pages = size - b.byteLength + 65535 >>> 16;
  try {
@@ -4977,11 +4982,11 @@ function emscripten_realloc_buffer(size) {
   updateMemoryViews();
   return 1;
  } catch (e) {}
-}
+};
 
-function _emscripten_resize_heap(requestedSize) {
+var _emscripten_resize_heap = requestedSize => {
  var oldSize = GROWABLE_HEAP_U8().length;
- requestedSize = requestedSize >>> 0;
+ requestedSize >>>= 0;
  if (requestedSize <= oldSize) {
   return false;
  }
@@ -4994,17 +4999,17 @@ function _emscripten_resize_heap(requestedSize) {
   var overGrownHeapSize = oldSize * (1 + .2 / cutDown);
   overGrownHeapSize = Math.min(overGrownHeapSize, requestedSize + 100663296);
   var newSize = Math.min(maxHeapSize, alignUp(Math.max(requestedSize, overGrownHeapSize), 65536));
-  var replacement = emscripten_realloc_buffer(newSize);
+  var replacement = growMemory(newSize);
   if (replacement) {
    return true;
   }
  }
  return false;
-}
+};
 
-function runtimeKeepalivePop() {
+var runtimeKeepalivePop = () => {
  runtimeKeepaliveCounter -= 1;
-}
+};
 
 var _emscripten_runtime_keepalive_pop = runtimeKeepalivePop;
 
@@ -5012,11 +5017,9 @@ var _emscripten_runtime_keepalive_push = runtimeKeepalivePush;
 
 var ENV = {};
 
-function getExecutableName() {
- return thisProgram || "./this.program";
-}
+var getExecutableName = () => thisProgram || "./this.program";
 
-function getEnvStrings() {
+var getEnvStrings = () => {
  if (!getEnvStrings.strings) {
   var lang = (typeof navigator == "object" && navigator.languages && navigator.languages[0] || "C").replace("-", "_") + ".UTF-8";
   var env = {
@@ -5038,14 +5041,14 @@ function getEnvStrings() {
   getEnvStrings.strings = strings;
  }
  return getEnvStrings.strings;
-}
+};
 
-function stringToAscii(str, buffer) {
+var stringToAscii = (str, buffer) => {
  for (var i = 0; i < str.length; ++i) {
   GROWABLE_HEAP_I8()[buffer++ >> 0] = str.charCodeAt(i);
  }
  GROWABLE_HEAP_I8()[buffer >> 0] = 0;
-}
+};
 
 function _environ_get(__environ, environ_buf) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(19, 1, __environ, environ_buf);
@@ -5104,7 +5107,7 @@ function _fd_fdstat_get(fd, pbuf) {
  }
 }
 
-function doReadv(stream, iov, iovcnt, offset) {
+var doReadv = (stream, iov, iovcnt, offset) => {
  var ret = 0;
  for (var i = 0; i < iovcnt; i++) {
   var ptr = GROWABLE_HEAP_U32()[iov >> 2];
@@ -5119,7 +5122,7 @@ function doReadv(stream, iov, iovcnt, offset) {
   }
  }
  return ret;
-}
+};
 
 function _fd_read(fd, iov, iovcnt, pnum) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(23, 1, fd, iov, iovcnt, pnum);
@@ -5136,8 +5139,9 @@ function _fd_read(fd, iov, iovcnt, pnum) {
 
 function _fd_seek(fd, offset, whence, newOffset) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(24, 1, fd, offset, whence, newOffset);
+ offset = bigintToI53Checked(offset);
+ newOffset = bigintToI53Checked(newOffset);
  try {
-  offset = bigintToI53Checked(offset);
   if (isNaN(offset)) return 61;
   var stream = SYSCALLS.getStreamFromFD(fd);
   FS.llseek(stream, offset, whence);
@@ -5150,7 +5154,7 @@ function _fd_seek(fd, offset, whence, newOffset) {
  }
 }
 
-function doWritev(stream, iov, iovcnt, offset) {
+var doWritev = (stream, iov, iovcnt, offset) => {
  var ret = 0;
  for (var i = 0; i < iovcnt; i++) {
   var ptr = GROWABLE_HEAP_U32()[iov >> 2];
@@ -5164,7 +5168,7 @@ function doWritev(stream, iov, iovcnt, offset) {
   }
  }
  return ret;
-}
+};
 
 function _fd_write(fd, iov, iovcnt, pnum) {
  if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(25, 1, fd, iov, iovcnt, pnum);
@@ -5364,8 +5368,8 @@ var emnapiExternalMemory = {
   emnapiExternalMemory.registry = typeof FinalizationRegistry === "function" ? new FinalizationRegistry(function(_pointer) {
    _free(_pointer);
   }) : undefined;
-  emnapiExternalMemory.table = new WeakMap();
-  emnapiExternalMemory.wasmMemoryViewTable = new WeakMap();
+  emnapiExternalMemory.table = new WeakMap;
+  emnapiExternalMemory.wasmMemoryViewTable = new WeakMap;
  },
  isDetachedArrayBuffer: function(arrayBuffer) {
   if (arrayBuffer.byteLength === 0) {
@@ -6994,17 +6998,17 @@ function _napi_typeof(env, value, result) {
  return envObject.clearLastError();
 }
 
-function arraySum(array, index) {
+var arraySum = (array, index) => {
  var sum = 0;
  for (var i = 0; i <= index; sum += array[i++]) {}
  return sum;
-}
+};
 
 var MONTH_DAYS_LEAP = [ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ];
 
 var MONTH_DAYS_REGULAR = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ];
 
-function addDays(date, days) {
+var addDays = (date, days) => {
  var newDate = new Date(date.getTime());
  while (days > 0) {
   var leap = isLeapYear(newDate.getFullYear());
@@ -7025,13 +7029,13 @@ function addDays(date, days) {
   }
  }
  return newDate;
-}
+};
 
-function writeArrayToMemory(array, buffer) {
+var writeArrayToMemory = (array, buffer) => {
  GROWABLE_HEAP_I8().set(array, buffer);
-}
+};
 
-function _strftime(s, maxsize, format, tm) {
+var _strftime = (s, maxsize, format, tm) => {
  var tm_zone = GROWABLE_HEAP_I32()[tm + 40 >> 2];
  var date = {
   tm_sec: GROWABLE_HEAP_I32()[tm >> 2],
@@ -7143,74 +7147,42 @@ function _strftime(s, maxsize, format, tm) {
   return thisDate.getFullYear() - 1;
  }
  var EXPANSION_RULES_2 = {
-  "%a": function(date) {
-   return WEEKDAYS[date.tm_wday].substring(0, 3);
-  },
-  "%A": function(date) {
-   return WEEKDAYS[date.tm_wday];
-  },
-  "%b": function(date) {
-   return MONTHS[date.tm_mon].substring(0, 3);
-  },
-  "%B": function(date) {
-   return MONTHS[date.tm_mon];
-  },
-  "%C": function(date) {
+  "%a": date => WEEKDAYS[date.tm_wday].substring(0, 3),
+  "%A": date => WEEKDAYS[date.tm_wday],
+  "%b": date => MONTHS[date.tm_mon].substring(0, 3),
+  "%B": date => MONTHS[date.tm_mon],
+  "%C": date => {
    var year = date.tm_year + 1900;
    return leadingNulls(year / 100 | 0, 2);
   },
-  "%d": function(date) {
-   return leadingNulls(date.tm_mday, 2);
-  },
-  "%e": function(date) {
-   return leadingSomething(date.tm_mday, 2, " ");
-  },
-  "%g": function(date) {
-   return getWeekBasedYear(date).toString().substring(2);
-  },
-  "%G": function(date) {
-   return getWeekBasedYear(date);
-  },
-  "%H": function(date) {
-   return leadingNulls(date.tm_hour, 2);
-  },
-  "%I": function(date) {
+  "%d": date => leadingNulls(date.tm_mday, 2),
+  "%e": date => leadingSomething(date.tm_mday, 2, " "),
+  "%g": date => getWeekBasedYear(date).toString().substring(2),
+  "%G": date => getWeekBasedYear(date),
+  "%H": date => leadingNulls(date.tm_hour, 2),
+  "%I": date => {
    var twelveHour = date.tm_hour;
    if (twelveHour == 0) twelveHour = 12; else if (twelveHour > 12) twelveHour -= 12;
    return leadingNulls(twelveHour, 2);
   },
-  "%j": function(date) {
-   return leadingNulls(date.tm_mday + arraySum(isLeapYear(date.tm_year + 1900) ? MONTH_DAYS_LEAP : MONTH_DAYS_REGULAR, date.tm_mon - 1), 3);
-  },
-  "%m": function(date) {
-   return leadingNulls(date.tm_mon + 1, 2);
-  },
-  "%M": function(date) {
-   return leadingNulls(date.tm_min, 2);
-  },
-  "%n": function() {
-   return "\n";
-  },
-  "%p": function(date) {
+  "%j": date => leadingNulls(date.tm_mday + arraySum(isLeapYear(date.tm_year + 1900) ? MONTH_DAYS_LEAP : MONTH_DAYS_REGULAR, date.tm_mon - 1), 3),
+  "%m": date => leadingNulls(date.tm_mon + 1, 2),
+  "%M": date => leadingNulls(date.tm_min, 2),
+  "%n": () => "\n",
+  "%p": date => {
    if (date.tm_hour >= 0 && date.tm_hour < 12) {
     return "AM";
    }
    return "PM";
   },
-  "%S": function(date) {
-   return leadingNulls(date.tm_sec, 2);
-  },
-  "%t": function() {
-   return "\t";
-  },
-  "%u": function(date) {
-   return date.tm_wday || 7;
-  },
-  "%U": function(date) {
+  "%S": date => leadingNulls(date.tm_sec, 2),
+  "%t": () => "\t",
+  "%u": date => date.tm_wday || 7,
+  "%U": date => {
    var days = date.tm_yday + 7 - date.tm_wday;
    return leadingNulls(Math.floor(days / 7), 2);
   },
-  "%V": function(date) {
+  "%V": date => {
    var val = Math.floor((date.tm_yday + 7 - (date.tm_wday + 6) % 7) / 7);
    if ((date.tm_wday + 371 - date.tm_yday - 2) % 7 <= 2) {
     val++;
@@ -7227,32 +7199,22 @@ function _strftime(s, maxsize, format, tm) {
    }
    return leadingNulls(val, 2);
   },
-  "%w": function(date) {
-   return date.tm_wday;
-  },
-  "%W": function(date) {
+  "%w": date => date.tm_wday,
+  "%W": date => {
    var days = date.tm_yday + 7 - (date.tm_wday + 6) % 7;
    return leadingNulls(Math.floor(days / 7), 2);
   },
-  "%y": function(date) {
-   return (date.tm_year + 1900).toString().substring(2);
-  },
-  "%Y": function(date) {
-   return date.tm_year + 1900;
-  },
-  "%z": function(date) {
+  "%y": date => (date.tm_year + 1900).toString().substring(2),
+  "%Y": date => date.tm_year + 1900,
+  "%z": date => {
    var off = date.tm_gmtoff;
    var ahead = off >= 0;
    off = Math.abs(off) / 60;
    off = off / 60 * 100 + off % 60;
    return (ahead ? "+" : "-") + String("0000" + off).slice(-4);
   },
-  "%Z": function(date) {
-   return date.tm_zone;
-  },
-  "%%": function() {
-   return "%";
-  }
+  "%Z": date => date.tm_zone,
+  "%%": () => "%"
  };
  pattern = pattern.replace(/%%/g, "\0\0");
  for (var rule in EXPANSION_RULES_2) {
@@ -7267,11 +7229,14 @@ function _strftime(s, maxsize, format, tm) {
  }
  writeArrayToMemory(bytes, s);
  return bytes.length - 1;
-}
+};
 
-function _strftime_l(s, maxsize, format, tm, loc) {
- return _strftime(s, maxsize, format, tm);
-}
+var _strftime_l = (s, maxsize, format, tm, loc) => _strftime(s, maxsize, format, tm);
+
+var setWasmTableEntry = (idx, func) => {
+ wasmTable.set(idx, func);
+ wasmTableMirror[idx] = wasmTable.get(idx);
+};
 
 var freeTableIndexes = [];
 
@@ -7557,181 +7522,181 @@ emnapiString.init();
 var proxiedFunctionTable = [ null, _proc_exit, exitOnMainThread, pthreadCreateProxied, ___syscall_dup, ___syscall_faccessat, ___syscall_fcntl64, ___syscall_fstat64, ___syscall_ftruncate64, ___syscall_getcwd, ___syscall_ioctl, ___syscall_lstat64, ___syscall_newfstatat, ___syscall_openat, ___syscall_rmdir, ___syscall_stat64, ___syscall_unlinkat, __mmap_js, __munmap_js, _environ_get, _environ_sizes_get, _fd_close, _fd_fdstat_get, _fd_read, _fd_seek, _fd_write ];
 
 var wasmImports = {
- "__assert_fail": ___assert_fail,
- "__call_sighandler": ___call_sighandler,
- "__cxa_begin_catch": ___cxa_begin_catch,
- "__cxa_end_catch": ___cxa_end_catch,
- "__cxa_find_matching_catch_2": ___cxa_find_matching_catch_2,
- "__cxa_find_matching_catch_3": ___cxa_find_matching_catch_3,
- "__cxa_find_matching_catch_4": ___cxa_find_matching_catch_4,
- "__cxa_rethrow": ___cxa_rethrow,
- "__cxa_throw": ___cxa_throw,
- "__cxa_uncaught_exceptions": ___cxa_uncaught_exceptions,
- "__emscripten_init_main_thread_js": ___emscripten_init_main_thread_js,
- "__emscripten_thread_cleanup": ___emscripten_thread_cleanup,
- "__pthread_create_js": ___pthread_create_js,
- "__resumeException": ___resumeException,
- "__syscall_dup": ___syscall_dup,
- "__syscall_faccessat": ___syscall_faccessat,
- "__syscall_fcntl64": ___syscall_fcntl64,
- "__syscall_fstat64": ___syscall_fstat64,
- "__syscall_ftruncate64": ___syscall_ftruncate64,
- "__syscall_getcwd": ___syscall_getcwd,
- "__syscall_ioctl": ___syscall_ioctl,
- "__syscall_lstat64": ___syscall_lstat64,
- "__syscall_newfstatat": ___syscall_newfstatat,
- "__syscall_openat": ___syscall_openat,
- "__syscall_rmdir": ___syscall_rmdir,
- "__syscall_stat64": ___syscall_stat64,
- "__syscall_unlinkat": ___syscall_unlinkat,
- "_emnapi_callback_into_module": __emnapi_callback_into_module,
- "_emnapi_ctx_decrease_waiting_request_counter": __emnapi_ctx_decrease_waiting_request_counter,
- "_emnapi_ctx_increase_waiting_request_counter": __emnapi_ctx_increase_waiting_request_counter,
- "_emnapi_get_last_error_info": __emnapi_get_last_error_info,
- "_emnapi_node_emit_async_destroy": __emnapi_node_emit_async_destroy,
- "_emnapi_node_emit_async_init": __emnapi_node_emit_async_init,
- "_emnapi_node_make_callback": __emnapi_node_make_callback,
- "_emnapi_set_immediate": __emnapi_set_immediate,
- "_emnapi_worker_unref": __emnapi_worker_unref,
- "_emscripten_get_now_is_monotonic": __emscripten_get_now_is_monotonic,
- "_emscripten_notify_mailbox_postmessage": __emscripten_notify_mailbox_postmessage,
- "_emscripten_set_offscreencanvas_size": __emscripten_set_offscreencanvas_size,
- "_emscripten_thread_mailbox_await": __emscripten_thread_mailbox_await,
- "_emscripten_thread_set_strongref": __emscripten_thread_set_strongref,
- "_emscripten_throw_longjmp": __emscripten_throw_longjmp,
- "_gmtime_js": __gmtime_js,
- "_localtime_js": __localtime_js,
- "_mmap_js": __mmap_js,
- "_munmap_js": __munmap_js,
- "_tzset_js": __tzset_js,
- "abort": _abort,
- "emnapi_is_node_binding_available": _emnapi_is_node_binding_available,
- "emscripten_check_blocking_allowed": _emscripten_check_blocking_allowed,
- "emscripten_date_now": _emscripten_date_now,
- "emscripten_exit_with_live_runtime": _emscripten_exit_with_live_runtime,
- "emscripten_get_heap_max": _emscripten_get_heap_max,
- "emscripten_get_now": _emscripten_get_now,
- "emscripten_num_logical_cores": _emscripten_num_logical_cores,
- "emscripten_receive_on_main_thread_js": _emscripten_receive_on_main_thread_js,
- "emscripten_resize_heap": _emscripten_resize_heap,
- "emscripten_runtime_keepalive_pop": _emscripten_runtime_keepalive_pop,
- "emscripten_runtime_keepalive_push": _emscripten_runtime_keepalive_push,
- "environ_get": _environ_get,
- "environ_sizes_get": _environ_sizes_get,
- "exit": _exit,
- "fd_close": _fd_close,
- "fd_fdstat_get": _fd_fdstat_get,
- "fd_read": _fd_read,
- "fd_seek": _fd_seek,
- "fd_write": _fd_write,
- "ffi_call_helper": ffi_call_helper,
- "invoke_di": invoke_di,
- "invoke_dii": invoke_dii,
- "invoke_diii": invoke_diii,
- "invoke_diiii": invoke_diiii,
- "invoke_fiii": invoke_fiii,
- "invoke_i": invoke_i,
- "invoke_ii": invoke_ii,
- "invoke_iidi": invoke_iidi,
- "invoke_iif": invoke_iif,
- "invoke_iii": invoke_iii,
- "invoke_iiid": invoke_iiid,
- "invoke_iiii": invoke_iiii,
- "invoke_iiiii": invoke_iiiii,
- "invoke_iiiiid": invoke_iiiiid,
- "invoke_iiiiii": invoke_iiiiii,
- "invoke_iiiiiii": invoke_iiiiiii,
- "invoke_iiiiiiii": invoke_iiiiiiii,
- "invoke_iiiiiiiiii": invoke_iiiiiiiiii,
- "invoke_iiiiiiiiiii": invoke_iiiiiiiiiii,
- "invoke_iiiiiiiiiiii": invoke_iiiiiiiiiiii,
- "invoke_iiiiiiiiiiiii": invoke_iiiiiiiiiiiii,
- "invoke_iiiiiiiiiiiiiiiii": invoke_iiiiiiiiiiiiiiiii,
- "invoke_iiiiij": invoke_iiiiij,
- "invoke_iiijii": invoke_iiijii,
- "invoke_iij": invoke_iij,
- "invoke_ji": invoke_ji,
- "invoke_jii": invoke_jii,
- "invoke_jiiii": invoke_jiiii,
- "invoke_v": invoke_v,
- "invoke_vi": invoke_vi,
- "invoke_vid": invoke_vid,
- "invoke_vii": invoke_vii,
- "invoke_viid": invoke_viid,
- "invoke_viidd": invoke_viidd,
- "invoke_viidddddd": invoke_viidddddd,
- "invoke_viiddi": invoke_viiddi,
- "invoke_viiddid": invoke_viiddid,
- "invoke_viidi": invoke_viidi,
- "invoke_viii": invoke_viii,
- "invoke_viiid": invoke_viiid,
- "invoke_viiii": invoke_viiii,
- "invoke_viiiiddi": invoke_viiiiddi,
- "invoke_viiiii": invoke_viiiii,
- "invoke_viiiiii": invoke_viiiiii,
- "invoke_viiiiiii": invoke_viiiiiii,
- "invoke_viiiiiiii": invoke_viiiiiiii,
- "invoke_viiiiiiiii": invoke_viiiiiiiii,
- "invoke_viiiiiiiiii": invoke_viiiiiiiiii,
- "invoke_viiiiiiiiiii": invoke_viiiiiiiiiii,
- "invoke_viiiiiiiiiiiiiii": invoke_viiiiiiiiiiiiiii,
- "invoke_viij": invoke_viij,
- "llvm_eh_typeid_for": _llvm_eh_typeid_for,
- "memory": wasmMemory,
- "napi_add_finalizer": _napi_add_finalizer,
- "napi_call_function": _napi_call_function,
- "napi_clear_last_error": _napi_clear_last_error,
- "napi_close_escapable_handle_scope": _napi_close_escapable_handle_scope,
- "napi_close_handle_scope": _napi_close_handle_scope,
- "napi_coerce_to_object": _napi_coerce_to_object,
- "napi_coerce_to_string": _napi_coerce_to_string,
- "napi_create_array": _napi_create_array,
- "napi_create_array_with_length": _napi_create_array_with_length,
- "napi_create_buffer_copy": _napi_create_buffer_copy,
- "napi_create_double": _napi_create_double,
- "napi_create_error": _napi_create_error,
- "napi_create_external_buffer": _napi_create_external_buffer,
- "napi_create_function": _napi_create_function,
- "napi_create_object": _napi_create_object,
- "napi_create_reference": _napi_create_reference,
- "napi_create_string_latin1": _napi_create_string_latin1,
- "napi_create_string_utf8": _napi_create_string_utf8,
- "napi_create_type_error": _napi_create_type_error,
- "napi_define_properties": _napi_define_properties,
- "napi_delete_reference": _napi_delete_reference,
- "napi_escape_handle": _napi_escape_handle,
- "napi_fatal_error": _napi_fatal_error,
- "napi_get_and_clear_last_exception": _napi_get_and_clear_last_exception,
- "napi_get_array_length": _napi_get_array_length,
- "napi_get_boolean": _napi_get_boolean,
- "napi_get_cb_info": _napi_get_cb_info,
- "napi_get_element": _napi_get_element,
- "napi_get_named_property": _napi_get_named_property,
- "napi_get_null": _napi_get_null,
- "napi_get_property": _napi_get_property,
- "napi_get_property_names": _napi_get_property_names,
- "napi_get_reference_value": _napi_get_reference_value,
- "napi_get_typedarray_info": _napi_get_typedarray_info,
- "napi_get_undefined": _napi_get_undefined,
- "napi_get_value_bool": _napi_get_value_bool,
- "napi_get_value_double": _napi_get_value_double,
- "napi_get_value_int32": _napi_get_value_int32,
- "napi_get_value_int64": _napi_get_value_int64,
- "napi_get_value_string_utf8": _napi_get_value_string_utf8,
- "napi_get_value_uint32": _napi_get_value_uint32,
- "napi_has_named_property": _napi_has_named_property,
- "napi_has_own_property": _napi_has_own_property,
- "napi_has_property": _napi_has_property,
- "napi_is_exception_pending": _napi_is_exception_pending,
- "napi_open_escapable_handle_scope": _napi_open_escapable_handle_scope,
- "napi_open_handle_scope": _napi_open_handle_scope,
- "napi_set_element": _napi_set_element,
- "napi_set_last_error": _napi_set_last_error,
- "napi_set_named_property": _napi_set_named_property,
- "napi_throw": _napi_throw,
- "napi_typeof": _napi_typeof,
- "strftime": _strftime,
- "strftime_l": _strftime_l
+ __assert_fail: ___assert_fail,
+ __call_sighandler: ___call_sighandler,
+ __cxa_begin_catch: ___cxa_begin_catch,
+ __cxa_end_catch: ___cxa_end_catch,
+ __cxa_find_matching_catch_2: ___cxa_find_matching_catch_2,
+ __cxa_find_matching_catch_3: ___cxa_find_matching_catch_3,
+ __cxa_find_matching_catch_4: ___cxa_find_matching_catch_4,
+ __cxa_rethrow: ___cxa_rethrow,
+ __cxa_throw: ___cxa_throw,
+ __cxa_uncaught_exceptions: ___cxa_uncaught_exceptions,
+ __emscripten_init_main_thread_js: ___emscripten_init_main_thread_js,
+ __emscripten_thread_cleanup: ___emscripten_thread_cleanup,
+ __pthread_create_js: ___pthread_create_js,
+ __resumeException: ___resumeException,
+ __syscall_dup: ___syscall_dup,
+ __syscall_faccessat: ___syscall_faccessat,
+ __syscall_fcntl64: ___syscall_fcntl64,
+ __syscall_fstat64: ___syscall_fstat64,
+ __syscall_ftruncate64: ___syscall_ftruncate64,
+ __syscall_getcwd: ___syscall_getcwd,
+ __syscall_ioctl: ___syscall_ioctl,
+ __syscall_lstat64: ___syscall_lstat64,
+ __syscall_newfstatat: ___syscall_newfstatat,
+ __syscall_openat: ___syscall_openat,
+ __syscall_rmdir: ___syscall_rmdir,
+ __syscall_stat64: ___syscall_stat64,
+ __syscall_unlinkat: ___syscall_unlinkat,
+ _emnapi_callback_into_module: __emnapi_callback_into_module,
+ _emnapi_ctx_decrease_waiting_request_counter: __emnapi_ctx_decrease_waiting_request_counter,
+ _emnapi_ctx_increase_waiting_request_counter: __emnapi_ctx_increase_waiting_request_counter,
+ _emnapi_get_last_error_info: __emnapi_get_last_error_info,
+ _emnapi_node_emit_async_destroy: __emnapi_node_emit_async_destroy,
+ _emnapi_node_emit_async_init: __emnapi_node_emit_async_init,
+ _emnapi_node_make_callback: __emnapi_node_make_callback,
+ _emnapi_set_immediate: __emnapi_set_immediate,
+ _emnapi_worker_unref: __emnapi_worker_unref,
+ _emscripten_get_now_is_monotonic: __emscripten_get_now_is_monotonic,
+ _emscripten_notify_mailbox_postmessage: __emscripten_notify_mailbox_postmessage,
+ _emscripten_set_offscreencanvas_size: __emscripten_set_offscreencanvas_size,
+ _emscripten_thread_mailbox_await: __emscripten_thread_mailbox_await,
+ _emscripten_thread_set_strongref: __emscripten_thread_set_strongref,
+ _emscripten_throw_longjmp: __emscripten_throw_longjmp,
+ _gmtime_js: __gmtime_js,
+ _localtime_js: __localtime_js,
+ _mmap_js: __mmap_js,
+ _munmap_js: __munmap_js,
+ _tzset_js: __tzset_js,
+ abort: _abort,
+ emnapi_is_node_binding_available: _emnapi_is_node_binding_available,
+ emscripten_check_blocking_allowed: _emscripten_check_blocking_allowed,
+ emscripten_date_now: _emscripten_date_now,
+ emscripten_exit_with_live_runtime: _emscripten_exit_with_live_runtime,
+ emscripten_get_heap_max: _emscripten_get_heap_max,
+ emscripten_get_now: _emscripten_get_now,
+ emscripten_num_logical_cores: _emscripten_num_logical_cores,
+ emscripten_receive_on_main_thread_js: _emscripten_receive_on_main_thread_js,
+ emscripten_resize_heap: _emscripten_resize_heap,
+ emscripten_runtime_keepalive_pop: _emscripten_runtime_keepalive_pop,
+ emscripten_runtime_keepalive_push: _emscripten_runtime_keepalive_push,
+ environ_get: _environ_get,
+ environ_sizes_get: _environ_sizes_get,
+ exit: _exit,
+ fd_close: _fd_close,
+ fd_fdstat_get: _fd_fdstat_get,
+ fd_read: _fd_read,
+ fd_seek: _fd_seek,
+ fd_write: _fd_write,
+ ffi_call_js: ffi_call_js,
+ invoke_di: invoke_di,
+ invoke_dii: invoke_dii,
+ invoke_diii: invoke_diii,
+ invoke_diiii: invoke_diiii,
+ invoke_fiii: invoke_fiii,
+ invoke_i: invoke_i,
+ invoke_ii: invoke_ii,
+ invoke_iidi: invoke_iidi,
+ invoke_iif: invoke_iif,
+ invoke_iii: invoke_iii,
+ invoke_iiid: invoke_iiid,
+ invoke_iiii: invoke_iiii,
+ invoke_iiiii: invoke_iiiii,
+ invoke_iiiiid: invoke_iiiiid,
+ invoke_iiiiii: invoke_iiiiii,
+ invoke_iiiiiii: invoke_iiiiiii,
+ invoke_iiiiiiii: invoke_iiiiiiii,
+ invoke_iiiiiiiiii: invoke_iiiiiiiiii,
+ invoke_iiiiiiiiiii: invoke_iiiiiiiiiii,
+ invoke_iiiiiiiiiiii: invoke_iiiiiiiiiiii,
+ invoke_iiiiiiiiiiiii: invoke_iiiiiiiiiiiii,
+ invoke_iiiiiiiiiiiiiiiii: invoke_iiiiiiiiiiiiiiiii,
+ invoke_iiiiij: invoke_iiiiij,
+ invoke_iiijii: invoke_iiijii,
+ invoke_iij: invoke_iij,
+ invoke_ji: invoke_ji,
+ invoke_jii: invoke_jii,
+ invoke_jiiii: invoke_jiiii,
+ invoke_v: invoke_v,
+ invoke_vi: invoke_vi,
+ invoke_vid: invoke_vid,
+ invoke_vii: invoke_vii,
+ invoke_viid: invoke_viid,
+ invoke_viidd: invoke_viidd,
+ invoke_viidddddd: invoke_viidddddd,
+ invoke_viiddi: invoke_viiddi,
+ invoke_viiddid: invoke_viiddid,
+ invoke_viidi: invoke_viidi,
+ invoke_viii: invoke_viii,
+ invoke_viiid: invoke_viiid,
+ invoke_viiii: invoke_viiii,
+ invoke_viiiiddi: invoke_viiiiddi,
+ invoke_viiiii: invoke_viiiii,
+ invoke_viiiiii: invoke_viiiiii,
+ invoke_viiiiiii: invoke_viiiiiii,
+ invoke_viiiiiiii: invoke_viiiiiiii,
+ invoke_viiiiiiiii: invoke_viiiiiiiii,
+ invoke_viiiiiiiiii: invoke_viiiiiiiiii,
+ invoke_viiiiiiiiiii: invoke_viiiiiiiiiii,
+ invoke_viiiiiiiiiiiiiii: invoke_viiiiiiiiiiiiiii,
+ invoke_viij: invoke_viij,
+ llvm_eh_typeid_for: _llvm_eh_typeid_for,
+ memory: wasmMemory,
+ napi_add_finalizer: _napi_add_finalizer,
+ napi_call_function: _napi_call_function,
+ napi_clear_last_error: _napi_clear_last_error,
+ napi_close_escapable_handle_scope: _napi_close_escapable_handle_scope,
+ napi_close_handle_scope: _napi_close_handle_scope,
+ napi_coerce_to_object: _napi_coerce_to_object,
+ napi_coerce_to_string: _napi_coerce_to_string,
+ napi_create_array: _napi_create_array,
+ napi_create_array_with_length: _napi_create_array_with_length,
+ napi_create_buffer_copy: _napi_create_buffer_copy,
+ napi_create_double: _napi_create_double,
+ napi_create_error: _napi_create_error,
+ napi_create_external_buffer: _napi_create_external_buffer,
+ napi_create_function: _napi_create_function,
+ napi_create_object: _napi_create_object,
+ napi_create_reference: _napi_create_reference,
+ napi_create_string_latin1: _napi_create_string_latin1,
+ napi_create_string_utf8: _napi_create_string_utf8,
+ napi_create_type_error: _napi_create_type_error,
+ napi_define_properties: _napi_define_properties,
+ napi_delete_reference: _napi_delete_reference,
+ napi_escape_handle: _napi_escape_handle,
+ napi_fatal_error: _napi_fatal_error,
+ napi_get_and_clear_last_exception: _napi_get_and_clear_last_exception,
+ napi_get_array_length: _napi_get_array_length,
+ napi_get_boolean: _napi_get_boolean,
+ napi_get_cb_info: _napi_get_cb_info,
+ napi_get_element: _napi_get_element,
+ napi_get_named_property: _napi_get_named_property,
+ napi_get_null: _napi_get_null,
+ napi_get_property: _napi_get_property,
+ napi_get_property_names: _napi_get_property_names,
+ napi_get_reference_value: _napi_get_reference_value,
+ napi_get_typedarray_info: _napi_get_typedarray_info,
+ napi_get_undefined: _napi_get_undefined,
+ napi_get_value_bool: _napi_get_value_bool,
+ napi_get_value_double: _napi_get_value_double,
+ napi_get_value_int32: _napi_get_value_int32,
+ napi_get_value_int64: _napi_get_value_int64,
+ napi_get_value_string_utf8: _napi_get_value_string_utf8,
+ napi_get_value_uint32: _napi_get_value_uint32,
+ napi_has_named_property: _napi_has_named_property,
+ napi_has_own_property: _napi_has_own_property,
+ napi_has_property: _napi_has_property,
+ napi_is_exception_pending: _napi_is_exception_pending,
+ napi_open_escapable_handle_scope: _napi_open_escapable_handle_scope,
+ napi_open_handle_scope: _napi_open_handle_scope,
+ napi_set_element: _napi_set_element,
+ napi_set_last_error: _napi_set_last_error,
+ napi_set_named_property: _napi_set_named_property,
+ napi_throw: _napi_throw,
+ napi_typeof: _napi_typeof,
+ strftime: _strftime,
+ strftime_l: _strftime_l
 };
 
 var asm = createWasm();
@@ -7804,9 +7769,9 @@ var ___cxa_can_catch = asm["__cxa_can_catch"];
 
 var ___cxa_is_pointer_type = asm["__cxa_is_pointer_type"];
 
-var ___start_em_js = Module["___start_em_js"] = 1888712;
+var ___start_em_js = Module["___start_em_js"] = 1890106;
 
-var ___stop_em_js = Module["___stop_em_js"] = 1899140;
+var ___stop_em_js = Module["___stop_em_js"] = 1900456;
 
 function invoke_vii(index, a1, a2) {
  var sp = stackSave();
@@ -7863,17 +7828,6 @@ function invoke_iii(index, a1, a2) {
  }
 }
 
-function invoke_viiiii(index, a1, a2, a3, a4, a5) {
- var sp = stackSave();
- try {
-  getWasmTableEntry(index)(a1, a2, a3, a4, a5);
- } catch (e) {
-  stackRestore(sp);
-  if (e !== e + 0) throw e;
-  _setThrew(1, 0);
- }
-}
-
 function invoke_ii(index, a1) {
  var sp = stackSave();
  try {
@@ -7894,6 +7848,17 @@ function invoke_jii(index, a1, a2) {
   if (e !== e + 0) throw e;
   _setThrew(1, 0);
   return 0n;
+ }
+}
+
+function invoke_viiiii(index, a1, a2, a3, a4, a5) {
+ var sp = stackSave();
+ try {
+  getWasmTableEntry(index)(a1, a2, a3, a4, a5);
+ } catch (e) {
+  stackRestore(sp);
+  if (e !== e + 0) throw e;
+  _setThrew(1, 0);
  }
 }
 
@@ -8117,6 +8082,17 @@ function invoke_viiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9) {
  }
 }
 
+function invoke_viiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) {
+ var sp = stackSave();
+ try {
+  getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
+ } catch (e) {
+  stackRestore(sp);
+  if (e !== e + 0) throw e;
+  _setThrew(1, 0);
+ }
+}
+
 function invoke_viiiiddi(index, a1, a2, a3, a4, a5, a6, a7) {
  var sp = stackSave();
  try {
@@ -8243,17 +8219,6 @@ function invoke_iiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11
  var sp = stackSave();
  try {
   return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
- } catch (e) {
-  stackRestore(sp);
-  if (e !== e + 0) throw e;
-  _setThrew(1, 0);
- }
-}
-
-function invoke_viiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) {
- var sp = stackSave();
- try {
-  getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
  } catch (e) {
   stackRestore(sp);
   if (e !== e + 0) throw e;

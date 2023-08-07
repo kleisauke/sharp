@@ -27,22 +27,14 @@ if (ENVIRONMENT_IS_NODE) {
 
   Object.assign(global, {
     self: global,
-    require: require,
-    Module: Module,
-    __filename: __filename,
-    __dirname: __dirname,
+    require,
+    Module,
+    __filename,
+    __dirname,
     Worker: nodeWorkerThreads.Worker,
-    importScripts: function(f) {
-      (0, eval)(fs.readFileSync(f, 'utf8') + '//# sourceURL=' + f);
-    },
-    postMessage: function(msg) {
-      parentPort.postMessage(msg);
-    },
-    performance: global.performance || {
-      now: function() {
-        return Date.now();
-      }
-    },
+    importScripts: (f) => (0, eval)(fs.readFileSync(f, 'utf8') + '//# sourceURL=' + f),
+    postMessage: (msg) => parentPort.postMessage(msg),
+    performance: global.performance || { now: Date.now },
   });
 }
 
@@ -60,7 +52,7 @@ function threadPrintErr() {
 }
 function threadAlert() {
   var text = Array.prototype.slice.call(arguments).join(' ');
-  postMessage({cmd: 'alert', text: text, threadId: Module['_pthread_self']()});
+  postMessage({cmd: 'alert', text, threadId: Module['_pthread_self']()});
 }
 var err = threadPrintErr;
 self.alert = threadAlert;
@@ -110,8 +102,8 @@ function handleMessage(e) {
       // Use `const` here to ensure that the variable is scoped only to
       // that iteration, allowing safe reference from a closure.
       for (const handler of e.data.handlers) {
-        Module[handler] = function() {
-          postMessage({ cmd: 'callHandler', handler, args: [...arguments] });
+        Module[handler] = (...args) => {
+          postMessage({ cmd: 'callHandler', handler, args: args });
         }
       }
 
@@ -181,5 +173,3 @@ function handleMessage(e) {
 };
 
 self.onmessage = handleMessage;
-
-
