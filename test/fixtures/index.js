@@ -139,8 +139,6 @@ module.exports = {
 
   testPattern: getPath('test-pattern.png'),
 
-  destInCutout: getPath('dest-in-cutout.png'),
-
   // Path for tests requiring human inspection
   path: getPath,
 
