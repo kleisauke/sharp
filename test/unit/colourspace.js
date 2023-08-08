@@ -1,3 +1,6 @@
+// Copyright 2013 Lovell Fuller and others.
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 const assert = require('assert');
@@ -88,6 +91,19 @@ describe('Colour space conversion', function () {
         assert.strictEqual(320, info.width);
         fixtures.assertSimilar(fixtures.expected('colourspace.cmyk-without-profile.jpg'), data, done);
       });
+  });
+
+  it('Profile-less CMYK roundtrip', async () => {
+    const [c, m, y, k] = await sharp(fixtures.inputJpgWithCmykNoProfile)
+      .pipelineColourspace('cmyk')
+      .toColourspace('cmyk')
+      .raw()
+      .toBuffer();
+
+    assert.deepStrictEqual(
+      { c, m, y, k },
+      { c: 55, m: 27, y: 0, k: 0 }
+    );
   });
 
   it('From sRGB with RGB16 pipeline, resize with gamma, to sRGB', function (done) {

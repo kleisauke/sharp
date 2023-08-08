@@ -1,3 +1,6 @@
+// Copyright 2013 Lovell Fuller and others.
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 const fs = require('fs');
@@ -5,7 +8,6 @@ const path = require('path');
 const assert = require('assert');
 
 const eachLimit = require('async/eachLimit');
-const rimraf = require('rimraf');
 const extractZip = require('extract-zip');
 
 const sharp = require('../../');
@@ -218,21 +220,16 @@ describe('Tile', function () {
 
   it('Valid depths pass', function () {
     ['onepixel', 'onetile', 'one'].forEach(function (depth) {
-      assert.doesNotThrow(function (depth) {
-        sharp().tile({
-          depth: depth
-        });
-      });
+      assert.doesNotThrow(() => sharp().tile({ depth }));
     });
   });
 
   it('Invalid depths fail', function () {
     ['depth', 1].forEach(function (depth) {
-      assert.throws(function () {
-        sharp().tile({
-          depth: depth
-        });
-      });
+      assert.throws(
+        () => sharp().tile({ depth }),
+        /Expected one of: onepixel, onetile, one for depth but received/
+      );
     });
   });
 
@@ -293,12 +290,17 @@ describe('Tile', function () {
     });
   });
 
-  it('Invalid center parameter value fail', function () {
-    assert.throws(function () {
-      sharp().tile({
-        centre: 'true'
-      });
-    });
+  it('Valid center parameter value passes', function () {
+    assert.doesNotThrow(
+      () => sharp().tile({ center: true })
+    );
+  });
+
+  it('Invalid centre parameter value fails', function () {
+    assert.throws(
+      () => sharp().tile({ centre: 'true' }),
+      /Expected boolean for tileCentre but received true of type string/
+    );
   });
 
   it('Valid id parameter value passes', function () {
@@ -317,18 +319,23 @@ describe('Tile', function () {
     });
   });
 
-  it('Invalid basename parameter value fails', function () {
-    assert.throws(function () {
-      sharp().tile({
-        basename: true
-      });
-    });
+  it('Valid basename parameter value passes', function () {
+    assert.doesNotThrow(
+      () => sharp().tile({ basename: 'pass' })
+    );
   });
 
-  (sharp.format.dz.output.file ? describe : describe.skip)('Deep Zoom layout', () => {
-    it('Basic test', function (done) {
+  it('Invalid basename parameter value fails', function () {
+    assert.throws(
+      () => sharp().tile({ basename: true }),
+      /Expected string for basename but received/
+    );
+  });
+
+  if (sharp.format.dz.output.file) {
+    it('Deep Zoom layout', function (done) {
       const directory = fixtures.path('output.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .toFile(fixtures.path('output.dzi'), function (err, info) {
             if (err) throw err;
@@ -342,9 +349,9 @@ describe('Tile', function () {
       });
     });
 
-    it('With custom size+overlap', function (done) {
+    it('Deep Zoom layout with custom size+overlap', function (done) {
       const directory = fixtures.path('output.512.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 512,
@@ -364,9 +371,9 @@ describe('Tile', function () {
       });
     });
 
-    it('With custom size+angle', function (done) {
+    it('Deep Zoom layout with custom size+angle', function (done) {
       const directory = fixtures.path('output.512_90.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 512,
@@ -398,9 +405,9 @@ describe('Tile', function () {
       });
     });
 
-    it('With depth of one', function (done) {
+    it('Deep Zoom layout with depth of one', function (done) {
       const directory = fixtures.path('output.512_depth_one.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 512,
@@ -414,9 +421,9 @@ describe('Tile', function () {
       });
     });
 
-    it('With depth of onepixel', function (done) {
+    it('Deep Zoom layout with depth of onepixel', function (done) {
       const directory = fixtures.path('output.512_depth_onepixel.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 512,
@@ -430,9 +437,9 @@ describe('Tile', function () {
       });
     });
 
-    it('With depth of onetile', function (done) {
+    it('Deep Zoom layout with depth of onetile', function (done) {
       const directory = fixtures.path('output.256_depth_onetile.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 256,
@@ -446,9 +453,9 @@ describe('Tile', function () {
       });
     });
 
-    it('With skipBlanks', function (done) {
+    it('Deep Zoom layout with skipBlanks', function (done) {
       const directory = fixtures.path('output.256_skip_blanks.dzi_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpgOverlayLayer2)
           .tile({
             size: 256,
@@ -467,7 +474,7 @@ describe('Tile', function () {
 
     it('Zoomify layout', function (done) {
       const directory = fixtures.path('output.zoomify.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             layout: 'zoomify'
@@ -491,7 +498,7 @@ describe('Tile', function () {
 
     it('Zoomify layout with depth one', function (done) {
       const directory = fixtures.path('output.zoomify.depth_one.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 256,
@@ -512,7 +519,7 @@ describe('Tile', function () {
 
     it('Zoomify layout with depth onetile', function (done) {
       const directory = fixtures.path('output.zoomify.depth_onetile.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 256,
@@ -533,7 +540,7 @@ describe('Tile', function () {
 
     it('Zoomify layout with depth onepixel', function (done) {
       const directory = fixtures.path('output.zoomify.depth_onepixel.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             size: 256,
@@ -554,7 +561,7 @@ describe('Tile', function () {
 
     it('Zoomify layout with skip blanks', function (done) {
       const directory = fixtures.path('output.zoomify.skipBlanks.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpgOverlayLayer2)
           .tile({
             size: 256,
@@ -578,7 +585,7 @@ describe('Tile', function () {
 
     it('Google layout', function (done) {
       const directory = fixtures.path('output.google.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             layout: 'google'
@@ -602,7 +609,7 @@ describe('Tile', function () {
 
     it('Google layout with jpeg format', function (done) {
       const directory = fixtures.path('output.jpg.google.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .jpeg({
             quality: 1
@@ -639,7 +646,7 @@ describe('Tile', function () {
 
     it('Google layout with png format', function (done) {
       const directory = fixtures.path('output.png.google.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .png({
             compressionLevel: 0
@@ -676,7 +683,7 @@ describe('Tile', function () {
 
     it('Google layout with webp format', function (done) {
       const directory = fixtures.path('output.webp.google.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .webp({
             quality: 1,
@@ -714,7 +721,7 @@ describe('Tile', function () {
 
     it('Google layout with depth one', function (done) {
       const directory = fixtures.path('output.google_depth_one.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             layout: 'google',
@@ -736,7 +743,7 @@ describe('Tile', function () {
 
     it('Google layout with depth onepixel', function (done) {
       const directory = fixtures.path('output.google_depth_onepixel.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             layout: 'google',
@@ -758,7 +765,7 @@ describe('Tile', function () {
 
     it('Google layout with depth onetile', function (done) {
       const directory = fixtures.path('output.google_depth_onetile.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             layout: 'google',
@@ -780,7 +787,7 @@ describe('Tile', function () {
 
     it('Google layout with default skip Blanks', function (done) {
       const directory = fixtures.path('output.google_depth_skipBlanks.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputPng)
           .tile({
             layout: 'google',
@@ -805,7 +812,7 @@ describe('Tile', function () {
 
     it('Google layout with center image in tile', function (done) {
       const directory = fixtures.path('output.google_center.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             center: true,
@@ -825,7 +832,7 @@ describe('Tile', function () {
 
     it('Google layout with center image in tile centre', function (done) {
       const directory = fixtures.path('output.google_center.dzi');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             centre: true,
@@ -846,7 +853,7 @@ describe('Tile', function () {
     it('IIIFv2 layout', function (done) {
       const name = 'output.iiif.info';
       const directory = fixtures.path(name);
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         const id = 'https://sharp.test.com/iiif';
         sharp(fixtures.inputJpg)
           .tile({
@@ -876,7 +883,7 @@ describe('Tile', function () {
     it('IIIFv3 layout', function (done) {
       const name = 'output.iiif3.info';
       const directory = fixtures.path(name);
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         const id = 'https://sharp.test.com/iiif3';
         sharp(fixtures.inputJpg)
           .tile({
@@ -908,7 +915,7 @@ describe('Tile', function () {
       const container = fixtures.path('output.dz.container.zip');
       const extractTo = fixtures.path('output.dz.container');
       const directory = path.join(extractTo, 'output.dz.container_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .toFile(container, function (err, info) {
             if (err) throw err;
@@ -921,7 +928,7 @@ describe('Tile', function () {
               if (err) throw err;
               assert.strictEqual(true, stat.isFile());
               assert.strictEqual(true, stat.size > 0);
-              extractZip(container, { dir: path.dirname(extractTo) })
+              extractZip(container, { dir: extractTo })
                 .then(() => {
                   assertDeepZoomTiles(directory, 256, 13, done);
                 })
@@ -935,7 +942,7 @@ describe('Tile', function () {
       const container = fixtures.path('output.dz.containeropt.zip');
       const extractTo = fixtures.path('output.dz.containeropt');
       const directory = path.join(extractTo, 'output.dz.containeropt_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({
             container: 'zip'
@@ -952,7 +959,7 @@ describe('Tile', function () {
               if (err) throw err;
               assert.strictEqual(true, stat.isFile());
               assert.strictEqual(true, stat.size > 0);
-              extractZip(container, { dir: path.dirname(extractTo) })
+              extractZip(container, { dir: extractTo })
                 .then(() => {
                   assertDeepZoomTiles(directory, 256, 13, done);
                 })
@@ -966,7 +973,7 @@ describe('Tile', function () {
       const container = fixtures.path('output.dz.tiles.zip');
       const extractTo = fixtures.path('output.dz.tiles');
       const directory = path.join(extractTo, 'output.dz.tiles_files');
-      rimraf(directory, function () {
+      fs.rm(directory, { recursive: true }, function () {
         sharp(fixtures.inputJpg)
           .tile({ basename: 'output.dz.tiles' })
           .toBuffer(function (err, data, info) {
@@ -981,7 +988,7 @@ describe('Tile', function () {
               if (err) throw err;
               assert.strictEqual(true, stat.isFile());
               assert.strictEqual(true, stat.size > 0);
-              extractZip(container, { dir: path.dirname(extractTo) })
+              extractZip(container, { dir: extractTo })
                 .then(() => {
                   assertDeepZoomTiles(directory, 256, 13, done);
                 })
@@ -990,5 +997,5 @@ describe('Tile', function () {
           });
       });
     });
-  });
+  }
 });

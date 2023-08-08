@@ -1,3 +1,6 @@
+// Copyright 2013 Lovell Fuller and others.
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 const assert = require('assert');
@@ -139,6 +142,32 @@ describe('Trim borders', function () {
       .toBuffer();
 
     const { info } = await sharp(greyscale)
+      .trim()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const { width, height, trimOffsetTop, trimOffsetLeft } = info;
+    assert.strictEqual(width, 16);
+    assert.strictEqual(height, 8);
+    assert.strictEqual(trimOffsetTop, 0);
+    assert.strictEqual(trimOffsetLeft, -12);
+  });
+
+  it('Ensure CMYK image can be trimmed', async () => {
+    const cmyk = await sharp({
+      create: {
+        width: 16,
+        height: 8,
+        channels: 3,
+        background: 'red'
+      }
+    })
+      .extend({ left: 12, right: 24, background: 'blue' })
+      .toColourspace('cmyk')
+      .jpeg()
+      .toBuffer();
+
+    const { info } = await sharp(cmyk)
       .trim()
       .raw()
       .toBuffer({ resolveWithObject: true });

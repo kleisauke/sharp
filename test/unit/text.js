@@ -1,3 +1,6 @@
+// Copyright 2013 Lovell Fuller and others.
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 const assert = require('assert');
@@ -5,7 +8,9 @@ const assert = require('assert');
 const sharp = require('../../');
 const fixtures = require('../fixtures');
 
-(!process.env.npm_config_arch?.startsWith('wasm') ? describe : describe.skip)('Text to image', () => {
+(!process.env.npm_config_arch?.startsWith('wasm') ? describe : describe.skip)('Text to image', function () {
+  this.retries(3);
+
   it('text with default values', async () => {
     const output = fixtures.path('output.text-default.png');
     const text = sharp({
@@ -293,5 +298,25 @@ const fixtures = require('../fixtures');
         }
       });
     });
+  });
+
+  it('valid wrap throws', () => {
+    assert.doesNotThrow(() => sharp({ text: { text: 'text', wrap: 'none' } }));
+    assert.doesNotThrow(() => sharp({ text: { text: 'text', wrap: 'wordChar' } }));
+  });
+
+  it('invalid wrap throws', () => {
+    assert.throws(
+      () => sharp({ text: { text: 'text', wrap: 1 } }),
+      /Expected one of: word, char, wordChar, none for text\.wrap but received 1 of type number/
+    );
+    assert.throws(
+      () => sharp({ text: { text: 'text', wrap: false } }),
+      /Expected one of: word, char, wordChar, none for text\.wrap but received false of type boolean/
+    );
+    assert.throws(
+      () => sharp({ text: { text: 'text', wrap: 'invalid' } }),
+      /Expected one of: word, char, wordChar, none for text\.wrap but received invalid of type string/
+    );
   });
 });

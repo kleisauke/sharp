@@ -263,3 +263,15 @@ GitHub: https://github.com/antonmarsden
 
 Name:  Marcos Casagrande
 GitHub: https://github.com/marcosc90
+
+Name: Emanuel Jöbstl
+GitHub: https://github.com/ejoebstl
+
+Name: Tomasz Janowski
+GitHub: https://github.com/janaz
+
+Name: Lachlan Newman
+GitHub: https://github.com/LachlanNewman
+
+Name: BJJ
+GitHub: https://github.com/bianjunjie1981

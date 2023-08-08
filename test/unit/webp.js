@@ -1,3 +1,6 @@
+// Copyright 2013 Lovell Fuller and others.
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 const fs = require('fs');
@@ -99,6 +102,29 @@ describe('WebP', function () {
     });
   });
 
+  it('should produce a different file size with specific preset', () =>
+    sharp(fixtures.inputJpg)
+      .resize(320, 240)
+      .webp({ preset: 'default' })
+      .toBuffer()
+      .then(presetDefault =>
+        sharp(fixtures.inputJpg)
+          .resize(320, 240)
+          .webp({ preset: 'picture' })
+          .toBuffer()
+          .then(presetPicture => {
+            assert.notStrictEqual(presetDefault.length, presetPicture.length);
+          })
+      )
+  );
+
+  it('invalid preset throws', () => {
+    assert.throws(
+      () => sharp().webp({ preset: 'fail' }),
+      /Expected one of: default, photo, picture, drawing, icon, text for preset but received fail of type string/
+    );
+  });
+
   it('should produce a smaller file size with increased effort', () =>
     sharp(fixtures.inputJpg)
       .resize(320, 240)
@@ -114,6 +140,14 @@ describe('WebP', function () {
           })
       )
   );
+
+  it('should produce different file size with/out shrink-on-load', async () => {
+    const [shrunk, resized] = await Promise.all([
+      sharp(fixtures.inputWebP).resize({ width: 16 }).toBuffer(),
+      sharp(fixtures.inputWebP).resize({ width: 16, fastShrinkOnLoad: false, kernel: 'nearest' }).toBuffer()
+    ]);
+    assert.notStrictEqual(shrunk.length, resized.length);
+  });
 
   it('invalid effort throws', () => {
     assert.throws(() => {

@@ -1,5 +1,136 @@
 # Changelog
 
+## v0.32 - *flow*
+
+Requires libvips v8.14.3
+
+### v0.32.4 - 21st July 2023
+
+* Upgrade to libvips v8.14.3 for upstream bug fixes.
+
+* Expose ability to (un)block low-level libvips operations by name.
+
+* Prebuilt binaries: restore support for tile-based output.
+  [#3581](https://github.com/lovell/sharp/issues/3581)
+
+### v0.32.3 - 14th July 2023
+
+* Expose `preset` option for WebP output.
+  [#3639](https://github.com/lovell/sharp/issues/3639)
+
+* Ensure decoding remains sequential for all operations (regression in 0.32.2).
+  [#3725](https://github.com/lovell/sharp/issues/3725)
+
+### v0.32.2 - 11th July 2023
+
+* Limit HEIF output dimensions to 16384x16384, matches libvips.
+
+* Ensure exceptions are not thrown when terminating.
+  [#3569](https://github.com/lovell/sharp/issues/3569)
+
+* Ensure the same access method is used for all inputs (regression in 0.32.0).
+  [#3669](https://github.com/lovell/sharp/issues/3669)
+
+* Improve detection of jp2 filename extensions.
+  [#3674](https://github.com/lovell/sharp/pull/3674)
+  [@bianjunjie1981](https://github.com/bianjunjie1981)
+
+* Guard use of smartcrop premultiplied option to prevent warning (regression in 0.32.1).
+  [#3710](https://github.com/lovell/sharp/issues/3710)
+
+* Prevent over-compute in affine-based rotate before resize.
+  [#3722](https://github.com/lovell/sharp/issues/3722)
+
+* Allow sequential read for EXIF-based auto-orientation.
+  [#3725](https://github.com/lovell/sharp/issues/3725)
+
+### v0.32.1 - 27th April 2023
+
+* Add experimental `unflatten` operation.
+  [#3461](https://github.com/lovell/sharp/pull/3461)
+  [@antonmarsden](https://github.com/antonmarsden)
+
+* Ensure use of `flip` operation forces random access read (regression in 0.32.0).
+  [#3600](https://github.com/lovell/sharp/issues/3600)
+
+* Ensure `linear` operation works with 16-bit input (regression in 0.31.3).
+  [#3605](https://github.com/lovell/sharp/issues/3605)
+
+* Install: ensure proxy URLs are logged correctly.
+  [#3615](https://github.com/lovell/sharp/pull/3615)
+  [@TomWis97](https://github.com/TomWis97)
+
+* Ensure profile-less CMYK to CMYK roundtrip skips colourspace conversion.
+  [#3620](https://github.com/lovell/sharp/issues/3620)
+
+* Add support for `modulate` operation when using non-sRGB pipeline colourspace.
+  [#3620](https://github.com/lovell/sharp/issues/3620)
+
+* Ensure `trim` operation works with CMYK images (regression in 0.31.0).
+  [#3636](https://github.com/lovell/sharp/issues/3636)
+
+* Install: coerce libc version to semver.
+  [#3641](https://github.com/lovell/sharp/issues/3641)
+
+### v0.32.0 - 24th March 2023
+
+* Default to using sequential rather than random access read where possible.
+
+* Replace GIF output `optimise` / `optimize` option with `reuse`.
+
+* Add `progressive` option to GIF output for interlacing.
+
+* Add `wrap` option to text image creation.
+
+* Add `formatMagick` property to metadata of images loaded via *magick.
+
+* Prefer integer (un)premultiply for faster resizing of RGBA images.
+
+* Add `ignoreIcc` input option to ignore embedded ICC profile.
+
+* Allow use of GPS (IFD3) EXIF metadata.
+  [#2767](https://github.com/lovell/sharp/issues/2767)
+
+* TypeScript definitions are now maintained and published directly, deprecating the `@types/sharp` package.
+  [#3369](https://github.com/lovell/sharp/issues/3369)
+
+* Prebuilt binaries: ensure macOS 10.13+ support, as documented.
+  [#3438](https://github.com/lovell/sharp/issues/3438)
+
+* Prebuilt binaries: prevent use of glib slice allocator, improves QEMU support.
+  [#3448](https://github.com/lovell/sharp/issues/3448)
+
+* Add focus point coordinates to output when using attention based crop.
+  [#3470](https://github.com/lovell/sharp/pull/3470)
+  [@ejoebstl](https://github.com/ejoebstl)
+
+* Expose sharp version as `sharp.versions.sharp`.
+  [#3471](https://github.com/lovell/sharp/issues/3471)
+
+* Respect `fastShrinkOnLoad` resize option for WebP input.
+  [#3516](https://github.com/lovell/sharp/issues/3516)
+
+* Reduce sharpen `sigma` maximum from 10000 to 10.
+  [#3521](https://github.com/lovell/sharp/issues/3521)
+
+* Add support for `ArrayBuffer` input.
+  [#3548](https://github.com/lovell/sharp/pull/3548)
+  [@kapouer](https://github.com/kapouer)
+
+* Add support to `extend` operation for `extendWith` to allow copy/mirror/repeat.
+  [#3556](https://github.com/lovell/sharp/pull/3556)
+  [@janaz](https://github.com/janaz)
+
+* Ensure all async JS callbacks are wrapped to help avoid possible race condition.
+  [#3569](https://github.com/lovell/sharp/issues/3569)
+
+* Prebuilt binaries: support for tile-based output temporarily removed due to licensing issue.
+  [#3581](https://github.com/lovell/sharp/issues/3581)
+
+* Add support to `normalise` for `lower` and `upper` percentiles.
+  [#3583](https://github.com/lovell/sharp/pull/3583)
+  [@LachlanNewman](https://github.com/LachlanNewman)
+
 ## v0.31 - *eagle*
 
 Requires libvips v8.13.3

@@ -1,6 +1,10 @@
+// Copyright 2013 Lovell Fuller and others.
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 const assert = require('assert');
+const semver = require('semver');
 const sharp = require('../../');
 
 describe('Utilities', function () {
@@ -141,7 +145,8 @@ describe('Utilities', function () {
   describe('Versions', function () {
     it('Contains expected attributes', function () {
       assert.strictEqual('object', typeof sharp.versions);
-      assert.strictEqual('string', typeof sharp.versions.vips);
+      assert(semver.valid(sharp.versions.vips));
+      assert(semver.valid(sharp.versions.sharp));
     });
   });
 
@@ -150,6 +155,43 @@ describe('Utilities', function () {
       assert.strictEqual('object', typeof sharp.vendor);
       assert.strictEqual('string', typeof sharp.vendor.current);
       assert.strictEqual(true, Array.isArray(sharp.vendor.installed));
+    });
+  });
+
+  describe('Block', () => {
+    it('Can block a named operation', () => {
+      sharp.block({ operation: ['test'] });
+    });
+    it('Can unblock a named operation', () => {
+      sharp.unblock({ operation: ['test'] });
+    });
+    it('Invalid block operation throws', () => {
+      assert.throws(() => sharp.block(1),
+        /Expected object for options but received 1 of type number/
+      );
+      assert.throws(() => sharp.block({}),
+        /Expected Array<string> for operation but received undefined of type undefined/
+      );
+      assert.throws(() => sharp.block({ operation: 'fail' }),
+        /Expected Array<string> for operation but received fail of type string/
+      );
+      assert.throws(() => sharp.block({ operation: ['maybe', false] }),
+        /Expected Array<string> for operation but received maybe,false of type object/
+      );
+    });
+    it('Invalid unblock operation throws', () => {
+      assert.throws(() => sharp.unblock(1),
+        /Expected object for options but received 1 of type number/
+      );
+      assert.throws(() => sharp.unblock({}),
+        /Expected Array<string> for operation but received undefined of type undefined/
+      );
+      assert.throws(() => sharp.unblock({ operation: 'fail' }),
+        /Expected Array<string> for operation but received fail of type string/
+      );
+      assert.throws(() => sharp.unblock({ operation: ['maybe', false] }),
+        /Expected Array<string> for operation but received maybe,false of type object/
+      );
     });
   });
 });
