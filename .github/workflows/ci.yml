@@ -161,22 +161,22 @@ jobs:
       matrix:
         include:
           - platform: linux-arm
-            distro: bullseye
-            run_on_arch: armv6
+            container: balenalib/rpi-raspbian:bullseye
+            arch: arm/v6
             nodejs_arch: armv6l
             nodejs_hostname: unofficial-builds.nodejs.org
             nodejs_version: "18.17.0"
             nodejs_version_major: 18
           - platform: linux-s390x
-            distro: bullseye
-            run_on_arch: s390x
+            container: s390x/debian:bullseye
+            arch: s390x
             nodejs_arch: s390x
             nodejs_hostname: nodejs.org
             nodejs_version: "18.17.0"
             nodejs_version_major: 18
           - platform: linux-ppc64
-            distro: bullseye
-            run_on_arch: ppc64le
+            container: ppc64le/debian:bullseye
+            arch: ppc64le
             nodejs_arch: ppc64le
             nodejs_hostname: nodejs.org
             nodejs_version: "18.17.0"
@@ -184,26 +184,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
-      - uses: uraimo/run-on-arch-action@v2
         with:
-          arch: ${{ matrix.run_on_arch }}
-          distro: ${{ matrix.distro }}
-          env: |
-            prebuild_upload: "${{ startsWith(github.ref, 'refs/tags/') && secrets.GITHUB_TOKEN || '' }}"
-          run: |
-            apt-get update
-            apt-get install -y curl g++ git libatomic1 make python3 xz-utils
-            mkdir /opt/nodejs
-            curl --silent https://${{ matrix.nodejs_hostname }}/download/release/v${{ matrix.nodejs_version}}/node-v${{ matrix.nodejs_version}}-linux-${{ matrix.nodejs_arch }}.tar.xz | tar xJC /opt/nodejs --strip-components=1
-            export PATH=$PATH:/opt/nodejs/bin
-            npm install --build-from-source
-            npx mocha --no-config --spec=test/unit/io.js --timeout=30000
-            npm run package-from-local-build
-            npm pkg set "optionalDependencies.@img/sharp-${{ matrix.platform }}=file:./npm/${{ matrix.platform }}"
-            npm run clean
-            npm install --ignore-scripts
-            npx mocha --no-config --spec=test/unit/io.js --timeout=30000
-            [[ -n $prebuild_upload ]] && cd src && ln -s ../package.json && npx prebuild || true
+          platforms: linux/${{ matrix.arch }}
+      - env:
+          prebuild_upload: "${{ startsWith(github.ref, 'refs/tags/') && secrets.GITHUB_TOKEN || '' }}"
+        run: |
+          docker run \
+           --rm \
+           -e prebuild_upload \
+           -v "$GITHUB_WORKSPACE:/build" \
+           -w /build \
+           --platform linux/${{ matrix.arch }} \
+           --entrypoint /bin/bash \
+           ${{ matrix.container }} \
+           -c '\
+              apt-get update
+              apt-get install -y curl g++ git libatomic1 make python3 xz-utils
+              mkdir /opt/nodejs
+              curl --silent https://${{ matrix.nodejs_hostname }}/download/release/v${{ matrix.nodejs_version}}/node-v${{ matrix.nodejs_version}}-linux-${{ matrix.nodejs_arch }}.tar.xz | tar xJC /opt/nodejs --strip-components=1
+              export PATH=$PATH:/opt/nodejs/bin
+              npm install --build-from-source
+              npx mocha --no-config --spec=test/unit/io.js --timeout=30000
+              npm run package-from-local-build
+              npm pkg set "optionalDependencies.@img/sharp-${{ matrix.platform }}=file:./npm/${{ matrix.platform }}"
+              npm run clean
+              npm install --ignore-scripts
+              npx mocha --no-config --spec=test/unit/io.js --timeout=30000
+              [[ -n $prebuild_upload ]] && cd src && ln -s ../package.json && npx prebuild || true
+           '
   github-runner-emscripten:
     permissions:
       contents: write
