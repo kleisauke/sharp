@@ -21,6 +21,7 @@
         'defines': [
           '_VIPS_PUBLIC=__declspec(dllexport)',
           '_ALLOW_KEYWORD_MACROS',
+          '_HAS_EXCEPTIONS=1',
           'G_DISABLE_ASSERT',
           'G_DISABLE_CAST_CHECKS',
           'G_DISABLE_CHECKS'
@@ -88,6 +89,7 @@
       'G_DISABLE_CAST_CHECKS',
       'G_DISABLE_CHECKS',
       'NAPI_VERSION=9',
+      'NAPI_CPP_EXCEPTIONS',
       'NODE_ADDON_API_DISABLE_DEPRECATED',
       'NODE_API_SWALLOW_UNTHROWABLE_EXCEPTIONS'
     ],
