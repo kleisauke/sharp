@@ -150,7 +150,8 @@
           ['OS == "win"', {
             'defines': [
               '_ALLOW_KEYWORD_MACROS',
-              '_FILE_OFFSET_BITS=64'
+              '_FILE_OFFSET_BITS=64',
+              '_HAS_EXCEPTIONS=1'
             ],
             'link_settings': {
               'libraries': [
