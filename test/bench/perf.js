@@ -9,22 +9,8 @@ const { execSync } = require('node:child_process');
 const async = require('async');
 const Benchmark = require('benchmark');
 
-const safeRequire = (name) => {
-  try {
-    return require(name);
-  } catch (_err) {}
-  return null;
-};
-
 // Contenders
 const sharp = require('../../');
-const gm = require('gm');
-const imagemagick = require('imagemagick');
-const mapnik = safeRequire('mapnik');
-const { Jimp, JimpMime } = require('jimp');
-
-process.env.TF_CPP_MIN_LOG_LEVEL = 1;
-const tfjs = safeRequire('@tensorflow/tfjs-node');
 
 const fixtures = require('../fixtures');
 
@@ -40,7 +26,7 @@ const heightPng = 540;
 sharp.cache(false);
 
 // Spawn one thread per physical CPU core
-const physicalCores = Number(execSync('lscpu -p | egrep -v "^#" | sort -u -t, -k 2,4 | wc -l', { encoding: 'utf-8' }).trim());
+const physicalCores = Number(execSync('lscpu -p | grep -E -v "^#" | sort -u -t, -k 2,4 | wc -l', { encoding: 'utf-8' }).trim());
 console.log(`Detected ${physicalCores} physical cores`);
 sharp.concurrency(physicalCores);
 
@@ -48,159 +34,6 @@ async.series({
   jpeg: (callback) => {
     const inputJpgBuffer = fs.readFileSync(fixtures.inputJpg);
     const jpegSuite = new Benchmark.Suite('jpeg');
-    // jimp
-    jpegSuite.add('jimp-buffer-buffer', {
-      defer: true,
-      fn: async (deferred) => {
-        const image = await Jimp.read(inputJpgBuffer);
-        await image
-          .resize({ w: width, h: height, mode: Jimp.RESIZE_BICUBIC })
-          .getBuffer(JimpMime.jpeg, { quality: 80 });
-        deferred.resolve();
-      }
-    }).add('jimp-file-file', {
-      defer: true,
-      fn: async (deferred) => {
-        const image = await Jimp.read(fixtures.inputJpg);
-        await image
-          .resize({ w: width, h: height, mode: Jimp.RESIZE_BICUBIC })
-          .getBuffer(JimpMime.jpeg, { quality: 80 });
-        deferred.resolve();
-      }
-    });
-    // mapnik
-    mapnik && jpegSuite.add('mapnik-file-file', {
-      defer: true,
-      fn: (deferred) => {
-        mapnik.Image.open(fixtures.inputJpg, (err, img) => {
-          if (err) throw err;
-          img
-            .resize(width, height, {
-              scaling_method: mapnik.imageScaling.lanczos
-            })
-            .save(outputJpg, 'jpeg:quality=80', (err) => {
-              if (err) throw err;
-              deferred.resolve();
-            });
-        });
-      }
-    }).add('mapnik-buffer-buffer', {
-      defer: true,
-      fn: (deferred) => {
-        mapnik.Image.fromBytes(inputJpgBuffer, { max_size: 3000 }, (err, img) => {
-          if (err) throw err;
-          img
-            .resize(width, height, {
-              scaling_method: mapnik.imageScaling.lanczos
-            })
-            .encode('jpeg:quality=80', (err) => {
-              if (err) throw err;
-              deferred.resolve();
-            });
-        });
-      }
-    });
-    // imagemagick
-    jpegSuite.add('imagemagick-file-file', {
-      defer: true,
-      fn: (deferred) => {
-        imagemagick.resize({
-          srcPath: fixtures.inputJpg,
-          dstPath: outputJpg,
-          quality: 0.8,
-          width,
-          height,
-          format: 'jpg',
-          filter: 'Lanczos'
-        }, (err) => {
-          if (err) {
-            throw err;
-          } else {
-            deferred.resolve();
-          }
-        });
-      }
-    });
-    // gm
-    jpegSuite.add('gm-buffer-file', {
-      defer: true,
-      fn: (deferred) => {
-        gm(inputJpgBuffer)
-          .filter('Lanczos')
-          .resize(width, height)
-          .quality(80)
-          .write(outputJpg, (err) => {
-            if (err) {
-              throw err;
-            } else {
-              deferred.resolve();
-            }
-          });
-      }
-    }).add('gm-buffer-buffer', {
-      defer: true,
-      fn: (deferred) => {
-        gm(inputJpgBuffer)
-          .filter('Lanczos')
-          .resize(width, height)
-          .quality(80)
-          .toBuffer((err) => {
-            if (err) {
-              throw err;
-            } else {
-              deferred.resolve();
-            }
-          });
-      }
-    }).add('gm-file-file', {
-      defer: true,
-      fn: (deferred) => {
-        gm(fixtures.inputJpg)
-          .filter('Lanczos')
-          .resize(width, height)
-          .quality(80)
-          .write(outputJpg, (err) => {
-            if (err) {
-              throw err;
-            } else {
-              deferred.resolve();
-            }
-          });
-      }
-    }).add('gm-file-buffer', {
-      defer: true,
-      fn: (deferred) => {
-        gm(fixtures.inputJpg)
-          .filter('Lanczos')
-          .resize(width, height)
-          .quality(80)
-          .toBuffer((err) => {
-            if (err) {
-              throw err;
-            } else {
-              deferred.resolve();
-            }
-          });
-      }
-    });
-    // tfjs
-    tfjs && jpegSuite.add('tfjs-node-buffer-buffer', {
-      defer: true,
-      fn: (deferred) => {
-        const decoded = tfjs.node.decodeJpeg(inputJpgBuffer);
-        const resized = tfjs.image.resizeBilinear(decoded, [height, width]);
-        tfjs
-          .node
-          .encodeJpeg(resized, 'rgb', 80)
-          .then(() => {
-            deferred.resolve();
-            tfjs.disposeVariables();
-          })
-          .catch((err) => {
-            throw err;
-          });
-      }
-    });
     // sharp
     jpegSuite.add('sharp-buffer-file', {
       defer: true,
@@ -615,129 +448,6 @@ async.series({
     const inputPngBuffer = fs.readFileSync(fixtures.inputPngAlphaPremultiplicationLarge);
     const pngSuite = new Benchmark.Suite('png');
     const minSamples = 64;
-    // jimp
-    pngSuite.add('jimp-buffer-buffer', {
-      defer: true,
-      fn: async (deferred) => {
-        const image = await Jimp.read(inputPngBuffer);
-        await image
-          .resize({ w: width, h: heightPng, mode: Jimp.RESIZE_BICUBIC })
-          .getBuffer(JimpMime.png, { deflateLevel: 6, filterType: 0 });
-        deferred.resolve();
-      }
-    }).add('jimp-file-file', {
-      defer: true,
-      fn: async (deferred) => {
-        const image = await Jimp.read(fixtures.inputPngAlphaPremultiplicationLarge);
-        await image
-          .resize({ w: width, h: heightPng, mode: Jimp.RESIZE_BICUBIC })
-          .write(outputPng, { deflateLevel: 6, filterType: 0 });
-        deferred.resolve();
-      }
-    });
-    // mapnik
-    mapnik && pngSuite.add('mapnik-file-file', {
-      defer: true,
-      fn: (deferred) => {
-        mapnik.Image.open(fixtures.inputPngAlphaPremultiplicationLarge, (err, img) => {
-          if (err) throw err;
-          img.premultiply((err, img) => {
-            if (err) throw err;
-            img.resize(width, heightPng, {
-              scaling_method: mapnik.imageScaling.lanczos
-            }, (err, img) => {
-              if (err) throw err;
-              img.demultiply((err, img) => {
-                if (err) throw err;
-                img.save(outputPng, 'png32:f=no:z=6', (err) => {
-                  if (err) throw err;
-                  deferred.resolve();
-                });
-              });
-            });
-          });
-        });
-      }
-    }).add('mapnik-buffer-buffer', {
-      defer: true,
-      fn: (deferred) => {
-        mapnik.Image.fromBytes(inputPngBuffer, { max_size: 3000 }, (err, img) => {
-          if (err) throw err;
-          img.premultiply((err, img) => {
-            if (err) throw err;
-            img.resize(width, heightPng, {
-              scaling_method: mapnik.imageScaling.lanczos
-            }, (err, img) => {
-              if (err) throw err;
-              img.demultiply((err, img) => {
-                if (err) throw err;
-                img.encode('png32:f=no:z=6', (err) => {
-                  if (err) throw err;
-                  deferred.resolve();
-                });
-              });
-            });
-          });
-        });
-      }
-    });
-    // imagemagick
-    pngSuite.add('imagemagick-file-file', {
-      defer: true,
-      fn: (deferred) => {
-        imagemagick.resize({
-          srcPath: fixtures.inputPngAlphaPremultiplicationLarge,
-          dstPath: outputPng,
-          width,
-          height: heightPng,
-          filter: 'Lanczos',
-          customArgs: [
-            '-define', 'PNG:compression-level=6',
-            '-define', 'PNG:compression-filter=0'
-          ]
-        }, (err) => {
-          if (err) {
-            throw err;
-          } else {
-            deferred.resolve();
-          }
-        });
-      }
-    });
-    // gm
-    pngSuite.add('gm-file-file', {
-      defer: true,
-      fn: (deferred) => {
-        gm(fixtures.inputPngAlphaPremultiplicationLarge)
-          .filter('Lanczos')
-          .resize(width, heightPng)
-          .define('PNG:compression-level=6')
-          .define('PNG:compression-filter=0')
-          .write(outputPng, (err) => {
-            if (err) {
-              throw err;
-            } else {
-              deferred.resolve();
-            }
-          });
-      }
-    }).add('gm-file-buffer', {
-      defer: true,
-      fn: (deferred) => {
-        gm(fixtures.inputPngAlphaPremultiplicationLarge)
-          .filter('Lanczos')
-          .resize(width, heightPng)
-          .define('PNG:compression-level=6')
-          .define('PNG:compression-filter=0')
-          .toBuffer((err) => {
-            if (err) {
-              throw err;
-            } else {
-              deferred.resolve();
-            }
-          });
-      }
-    });
     // sharp
     pngSuite.add('sharp-buffer-file', {
       defer: true,
@@ -846,7 +556,7 @@ async.series({
       }
     });
     pngSuite.on('cycle', (event) => {
-      console.log(` png ${String(event.target)}`);
+      console.log(`png ${String(event.target)}`);
     }).on('complete', function () {
       callback(null, this.filter('fastest').map('name'));
     }).run();
@@ -912,14 +622,9 @@ async.series({
       callback(null, this.filter('fastest').map('name'));
     }).run();
   }
-}, (err, results) => {
+}, (err) => {
   if (err) {
     throw err;
   }
-  Object.keys(results).forEach((format) => {
-    if (results[format].toString().substr(0, 5) !== 'sharp') {
-      console.log(`sharp was slower than ${results[format]} for ${format}`);
-    }
-  });
   console.dir(sharp.cache());
 });
